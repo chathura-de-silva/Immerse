@@ -163,6 +163,261 @@
     const imgs = Array.from(postContainer.querySelectorAll("img[src], img[srcset]"));
     return imgs.filter(isLegitimatePostImage);
   }
+  function findPostMediaContainer(element) {
+    if (!element) return document.body;
+    const postLink = element.closest('a[href*="/p/"]');
+    if (postLink) return postLink;
+    const article = element.closest("article");
+    if (article) {
+      let curr = element;
+      while (curr && curr.parentElement && curr.parentElement !== article && curr.parentElement !== document.body) {
+        curr = curr.parentElement;
+      }
+      if (curr && curr.parentElement === article) {
+        return curr;
+      }
+    }
+    return element.parentElement || element;
+  }
+  function findNativeCarouselNextButton(postContainer) {
+    if (!postContainer) return null;
+    const labelMatches = postContainer.querySelectorAll(
+      'button[aria-label*="Next" i], button[aria-label*="next" i], button[aria-label*="Suivant" i], button[aria-label*="Weiter" i], button[aria-label*="Siguiente" i], button[aria-label*="Avanti" i], button[aria-label*="Pr\xF3ximo" i], div[role="button"][aria-label*="Next" i]'
+    );
+    if (labelMatches.length > 0) {
+      return labelMatches[labelMatches.length - 1];
+    }
+    const buttons = Array.from(postContainer.querySelectorAll('button, div[role="button"]'));
+    for (const btn of buttons) {
+      if (btn.closest("header, section, form")) continue;
+      const svg = btn.querySelector("svg");
+      if (!svg) continue;
+      const svgLabel = (svg.getAttribute("aria-label") || "").toLowerCase();
+      if (svgLabel.includes("next") || svgLabel.includes("chevron")) {
+        return btn;
+      }
+      const polyline = svg.querySelector("polyline");
+      if (polyline) {
+        const rect = btn.getBoundingClientRect();
+        const postRect = postContainer.getBoundingClientRect();
+        if (rect.left > postRect.left + postRect.width * 0.5) {
+          return btn;
+        }
+      }
+    }
+    return null;
+  }
+  function findNativeCarouselPrevButton(postContainer) {
+    if (!postContainer) return null;
+    const labelMatches = postContainer.querySelectorAll(
+      'button[aria-label*="Previous" i], button[aria-label*="prev" i], button[aria-label*="Pr\xE9c\xE9dent" i], button[aria-label*="Zur\xFCck" i], button[aria-label*="Anterior" i], button[aria-label*="Precedente" i], div[role="button"][aria-label*="Previous" i]'
+    );
+    if (labelMatches.length > 0) {
+      return labelMatches[0];
+    }
+    const buttons = Array.from(postContainer.querySelectorAll('button, div[role="button"]'));
+    for (const btn of buttons) {
+      if (btn.closest("header, section, form")) continue;
+      const svg = btn.querySelector("svg");
+      if (!svg) continue;
+      const svgLabel = (svg.getAttribute("aria-label") || "").toLowerCase();
+      if (svgLabel.includes("prev") || svgLabel.includes("back")) {
+        return btn;
+      }
+      const polyline = svg.querySelector("polyline");
+      if (polyline) {
+        const rect = btn.getBoundingClientRect();
+        const postRect = postContainer.getBoundingClientRect();
+        if (rect.left < postRect.left + postRect.width * 0.5) {
+          return btn;
+        }
+      }
+    }
+    return null;
+  }
+  function isCarouselPost(postContainer) {
+    if (!postContainer) return false;
+    const imgs = findPostImages(postContainer);
+    if (imgs.length > 1) return true;
+    if (findNativeCarouselNextButton(postContainer) || findNativeCarouselPrevButton(postContainer)) {
+      return true;
+    }
+    if (postContainer.querySelector('svg[aria-label*="Carousel" i], svg[aria-label*="carousel" i]')) {
+      return true;
+    }
+    const text = postContainer.innerText || postContainer.textContent || "";
+    if (/\b\d+\s*[/of]\s*\d+\b/i.test(text.slice(0, 300))) {
+      return true;
+    }
+    return false;
+  }
+  function getEstimatedSlideCount(postContainer) {
+    if (!postContainer) return 1;
+    const text = postContainer.innerText || postContainer.textContent || "";
+    const match = text.slice(0, 300).match(/\b\d+\s*[/of]\s*(\d+)\b/i);
+    if (match) {
+      const total = parseInt(match[1], 10);
+      if (total >= 2 && total <= 20) return total;
+    }
+    const allDivs = Array.from(postContainer.querySelectorAll("div"));
+    for (const div of allDivs) {
+      const children = Array.from(div.children);
+      if (children.length >= 2 && children.length <= 15) {
+        const firstChild = children[0];
+        const style = window.getComputedStyle(firstChild);
+        const w = parseFloat(style.width);
+        const h = parseFloat(style.height);
+        if (w > 0 && w <= 16 && h > 0 && h <= 16) {
+          return children.length;
+        }
+      }
+    }
+    const imgs = findPostImages(postContainer);
+    return Math.max(1, imgs.length);
+  }
+
+  // src/utils/srcset-parser.js
+  function parseSrcset(srcset) {
+    if (!srcset || typeof srcset !== "string") {
+      return [];
+    }
+    const trimmed = srcset.trim();
+    if (!trimmed) {
+      return [];
+    }
+    const candidateRegex = /(?:^|,)\s*([^\s]+)\s*(?:([0-9.]+)w|([0-9.]+)x)?/g;
+    const candidates = [];
+    let match;
+    while ((match = candidateRegex.exec(trimmed)) !== null) {
+      const rawUrl = match[1];
+      if (!rawUrl) continue;
+      const widthDesc = match[2] ? parseFloat(match[2]) : 0;
+      const densityDesc = match[3] ? parseFloat(match[3]) : 0;
+      let effectiveWidth = widthDesc;
+      if (!effectiveWidth && densityDesc) {
+        effectiveWidth = Math.round(densityDesc * 640);
+      }
+      if (!effectiveWidth) {
+        effectiveWidth = extractWidthFromUrl(rawUrl);
+      }
+      candidates.push({
+        url: rawUrl,
+        width: effectiveWidth,
+        density: densityDesc || 1
+      });
+    }
+    candidates.sort((a, b) => b.width - a.width);
+    return candidates;
+  }
+  function extractWidthFromUrl(url) {
+    if (!url || typeof url !== "string") return 0;
+    const match = url.match(/[sp]?(\d{3,4})x(\d{3,4})/i) || url.match(/c\d+\.\d+\.(\d{3,4})\.(\d{3,4})/i) || url.match(/[_\-/](\d{3,4})w/i);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+    return 0;
+  }
+  function extractFromReactFiber(element) {
+    if (!element || typeof element !== "object") return null;
+    let curr = element;
+    for (let depth = 0; depth < 5 && curr; depth++) {
+      const propsKey = Object.keys(curr).find((k) => k.startsWith("__reactProps$"));
+      if (propsKey && curr[propsKey]) {
+        const match = searchMediaProps(curr[propsKey], 0);
+        if (match) return match;
+      }
+      const fiberKey = Object.keys(curr).find((k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));
+      if (fiberKey && curr[fiberKey]) {
+        let fiber = curr[fiberKey];
+        for (let fDepth = 0; fDepth < 8 && fiber; fDepth++) {
+          const match = searchMediaProps(fiber.memoizedProps, 0) || searchMediaProps(fiber.pendingProps, 0);
+          if (match) return match;
+          fiber = fiber.return;
+        }
+      }
+      curr = curr.parentElement;
+    }
+    return null;
+  }
+  function searchMediaProps(obj, depth = 0) {
+    if (!obj || typeof obj !== "object" || depth > 4) return null;
+    if (obj.image_versions2?.candidates && Array.isArray(obj.image_versions2.candidates)) {
+      const sorted = [...obj.image_versions2.candidates].sort((a, b) => (b.width || 0) - (a.width || 0));
+      if (sorted[0]?.url) {
+        return {
+          url: sorted[0].url,
+          width: sorted[0].width || 1080,
+          height: sorted[0].height || 1080
+        };
+      }
+    }
+    if (obj.display_resources && Array.isArray(obj.display_resources)) {
+      const sorted = [...obj.display_resources].sort((a, b) => (b.config_width || 0) - (a.config_width || 0));
+      if (sorted[0]?.src) {
+        return {
+          url: sorted[0].src,
+          width: sorted[0].config_width || 1080,
+          height: sorted[0].config_height || 1080
+        };
+      }
+    }
+    if (typeof obj.display_url === "string" && obj.display_url.startsWith("http")) {
+      return {
+        url: obj.display_url,
+        width: obj.dimensions?.width || 1080,
+        height: obj.dimensions?.height || 1080
+      };
+    }
+    const interestingKeys = ["post", "media", "item", "carousel_media", "node"];
+    for (const key of interestingKeys) {
+      if (obj[key]) {
+        const match = searchMediaProps(obj[key], depth + 1);
+        if (match) return match;
+      }
+    }
+    return null;
+  }
+  function getResolutionCandidates(imgElement) {
+    if (!imgElement) return [];
+    const candidates = [];
+    const seenUrls = /* @__PURE__ */ new Set();
+    try {
+      const fiberCandidate = extractFromReactFiber(imgElement);
+      if (fiberCandidate?.url && !seenUrls.has(fiberCandidate.url)) {
+        seenUrls.add(fiberCandidate.url);
+        candidates.push({
+          url: fiberCandidate.url,
+          width: fiberCandidate.width || 1080
+        });
+      }
+    } catch {
+    }
+    const srcset = (typeof imgElement.getAttribute === "function" ? imgElement.getAttribute("srcset") : imgElement.srcset) || "";
+    const parsed = parseSrcset(srcset);
+    for (const item of parsed) {
+      if (item.url && !seenUrls.has(item.url)) {
+        seenUrls.add(item.url);
+        candidates.push({
+          url: item.url,
+          width: item.width || 640
+        });
+      }
+    }
+    const fallbackUrl = imgElement.currentSrc || imgElement.src || "";
+    if (fallbackUrl && !seenUrls.has(fallbackUrl)) {
+      seenUrls.add(fallbackUrl);
+      candidates.push({
+        url: fallbackUrl,
+        width: extractWidthFromUrl(fallbackUrl) || 640
+      });
+    }
+    candidates.sort((a, b) => b.width - a.width);
+    return candidates;
+  }
+  function getHighestResolutionUrl(imgElement) {
+    const candidates = getResolutionCandidates(imgElement);
+    return candidates.length > 0 ? candidates[0].url : imgElement?.currentSrc || imgElement?.src || "";
+  }
 
   // src/modules/viewer-overlay.js
   var ViewerOverlay = class {
@@ -466,13 +721,51 @@
     updatePosts(newPosts) {
       if (!newPosts || newPosts.length === 0) return;
       const oldLength = this.posts.length;
+      const activePost = this.posts[this.currentPostIndex];
+      if (activePost) {
+        const newActiveIdx = newPosts.findIndex((p) => p.id === activePost.id || p.tile && p.tile === activePost.tile);
+        if (newActiveIdx !== -1) {
+          this.currentPostIndex = newActiveIdx;
+        }
+      }
       this.posts = newPosts;
       if (this._waitingForNextPost && this.posts.length > oldLength) {
         this._waitingForNextPost = false;
         this.goToPost(oldLength, 0);
       } else {
         this._updateHeaderCounter();
+        const curr = this.posts[this.currentPostIndex];
+        if (curr) {
+          this._updateCarouselControls(curr);
+        }
       }
+    }
+    /**
+     * Synchronizes and accumulates any newly mounted slides for the given post.
+     *
+     * @param {Object} post
+     */
+    _syncPostSlides(post) {
+      if (!post || !post.tile) return;
+      const postImages = findPostImages(post.tile);
+      const seenUrls = new Set(post.slides.map((s) => s.url));
+      for (const imgEl of postImages) {
+        const url = getHighestResolutionUrl(imgEl);
+        if (url && !seenUrls.has(url)) {
+          seenUrls.add(url);
+          post.slides.push({
+            url,
+            width: imgEl.naturalWidth || 1080,
+            height: imgEl.naturalHeight || 1080,
+            element: imgEl
+          });
+        }
+      }
+      if (!post.isCarousel) {
+        post.isCarousel = post.slides.length > 1 || isCarouselPost(post.tile);
+      }
+      const estCount = getEstimatedSlideCount(post.tile);
+      post.totalSlides = Math.max(post.totalSlides || 0, estCount, post.slides.length);
     }
     /**
      * Updates overlay options dynamically when settings change.
@@ -526,6 +819,15 @@
     loadCurrent() {
       const post = this.posts[this.currentPostIndex];
       if (!post || !post.slides || post.slides.length === 0) return;
+      if (this._transitionTimeout) {
+        clearTimeout(this._transitionTimeout);
+        this._transitionTimeout = null;
+      }
+      if (this._spinnerTimeout) {
+        clearTimeout(this._spinnerTimeout);
+        this._spinnerTimeout = null;
+      }
+      this._syncPostSlides(post);
       this.currentSlideIndex = Math.max(0, Math.min(this.currentSlideIndex, post.slides.length - 1));
       const slide = post.slides[this.currentSlideIndex];
       if (this.currentPostIndex >= this.posts.length - 3 && this.onLoadMore) {
@@ -534,6 +836,10 @@
       this.resetTransform();
       this._updateHeaderCounter();
       this._updateCarouselControls(post);
+      if (this.dom.img.src === slide.url && this.dom.img.style.opacity === "1") {
+        this._preloadAdjacent();
+        return;
+      }
       const targetPostIndex = this.currentPostIndex;
       const targetSlideIndex = this.currentSlideIndex;
       if (this.dom.img.src && this.dom.img.style.opacity !== "0") {
@@ -615,7 +921,7 @@
         const w = tempImg.naturalWidth;
         const h = tempImg.naturalHeight;
         this._updateBadgeText(`${w} \xD7 ${h} \u2022 Highest Quality`);
-        setTimeout(() => {
+        this._transitionTimeout = setTimeout(() => {
           if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
             this.dom.imgPrev.style.display = "none";
             this.dom.imgPrev.style.transform = "none";
@@ -645,18 +951,21 @@
       this.dom.nextPostBtn.disabled = false;
     }
     _updateCarouselControls(post) {
-      if (!post || post.slides.length <= 1) {
+      if (!post || !post.isCarousel && post.slides.length <= 1) {
         this.dom.carouselCtrl.style.display = "none";
         return;
       }
       this.dom.carouselCtrl.style.display = "flex";
-      const totalSlides = post.slides.length;
+      const totalSlides = Math.max(post.totalSlides || 0, post.slides.length);
       const currentSlideNum = this.currentSlideIndex + 1;
       this.dom.carouselLabel.textContent = `Slide ${currentSlideNum} of ${totalSlides}`;
       this.dom.prevSlideBtn.disabled = this.currentSlideIndex === 0;
-      this.dom.nextSlideBtn.disabled = this.currentSlideIndex === totalSlides - 1;
+      const hasNativeNext = !!findNativeCarouselNextButton(post.tile);
+      const hasMore = this.currentSlideIndex < totalSlides - 1 || hasNativeNext;
+      this.dom.nextSlideBtn.disabled = !hasMore;
       this.dom.dotsContainer.innerHTML = "";
-      for (let i = 0; i < totalSlides; i++) {
+      const dotsCount = Math.max(totalSlides, post.slides.length);
+      for (let i = 0; i < dotsCount; i++) {
         const dot = createElement("div", {
           className: `immerse-dot ${i === this.currentSlideIndex ? "immerse-dot-active" : ""}`,
           attributes: { title: `Go to slide ${i + 1}` },
@@ -734,8 +1043,15 @@
       this._navDirection = 1;
       this.resetTransform();
       const post = this.posts[this.currentPostIndex];
-      if (post && this.currentSlideIndex < post.slides.length - 1) {
+      if (!post) return;
+      if (this.currentSlideIndex < post.slides.length - 1) {
         this.goToSlide(this.currentSlideIndex + 1);
+        this._prefetchNextNativeSlide(post);
+        return;
+      }
+      const nativeNext = findNativeCarouselNextButton(post.tile);
+      if (nativeNext) {
+        this._advanceNativeCarouselAndGo(post, this.currentSlideIndex + 1);
       }
     }
     prevSlide() {
@@ -750,8 +1066,44 @@
       this._lastNavTime = Date.now();
       this._navDirection = slideIndex >= this.currentSlideIndex ? 1 : -1;
       this.resetTransform();
-      this.currentSlideIndex = slideIndex;
-      this.loadCurrent();
+      const post = this.posts[this.currentPostIndex];
+      if (!post) return;
+      if (slideIndex < post.slides.length) {
+        this.currentSlideIndex = slideIndex;
+        this.loadCurrent();
+      } else {
+        this._advanceNativeCarouselAndGo(post, slideIndex);
+      }
+    }
+    _advanceNativeCarouselAndGo(post, targetSlideIndex) {
+      const nativeNext = findNativeCarouselNextButton(post.tile);
+      if (!nativeNext) return;
+      nativeNext.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      nativeNext.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      let attempts = 0;
+      const pollInterval = setInterval(() => {
+        attempts++;
+        this._syncPostSlides(post);
+        if (post.slides.length > targetSlideIndex) {
+          clearInterval(pollInterval);
+          this.goToSlide(targetSlideIndex);
+        } else if (attempts >= 8) {
+          clearInterval(pollInterval);
+          this._updateCarouselControls(post);
+        }
+      }, 45);
+    }
+    _prefetchNextNativeSlide(post) {
+      const nativeNext = findNativeCarouselNextButton(post.tile);
+      if (!nativeNext) return;
+      if (this.currentSlideIndex >= post.slides.length - 2) {
+        nativeNext.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        nativeNext.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        setTimeout(() => {
+          this._syncPostSlides(post);
+          this._updateCarouselControls(post);
+        }, 80);
+      }
     }
     /* ---------------- Zoom & Pan Transforms ---------------- */
     resetTransform() {
@@ -1001,12 +1353,16 @@
         const target = e.target;
         if (!target) return;
         const tile = target.closest('a[href*="/p/"]') || target.closest("article");
-        if (tile && this.tileToButtonMap.has(tile)) {
+        let btn = tile ? this.tileToButtonMap.get(tile) : null;
+        if (!btn && target) {
+          const media = findPostMediaContainer(target);
+          if (media) btn = this.tileToButtonMap.get(media);
+        }
+        if (btn) {
           if (hideTimer) {
             clearTimeout(hideTimer);
             hideTimer = null;
           }
-          const btn = this.tileToButtonMap.get(tile);
           if (this.activeButton && this.activeButton !== btn) {
             this.activeButton.classList.remove("immerse-visible");
           }
@@ -1042,9 +1398,10 @@
       const tile = imgElement.closest('a[href*="/p/"]') || imgElement.closest("article") || container;
       if (!tile || this.tileToButtonMap.has(tile)) return;
       if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) return;
-      const tileStyle = window.getComputedStyle(tile);
-      if (tileStyle.position === "static") {
-        tile.style.position = "relative";
+      const mediaContainer = findPostMediaContainer(imgElement);
+      const mediaStyle = window.getComputedStyle(mediaContainer);
+      if (mediaStyle.position === "static") {
+        mediaContainer.style.position = "relative";
       }
       const btnContainer = createElement("div", {
         className: "immerse-hover-btn-container"
@@ -1073,6 +1430,9 @@
       });
       btnContainer.appendChild(btn);
       this.tileToButtonMap.set(tile, btn);
+      if (mediaContainer !== tile) {
+        this.tileToButtonMap.set(mediaContainer, btn);
+      }
       imgElement.addEventListener("click", (e) => {
         const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: "both" };
         if (!settings.enabled) return;
@@ -1082,7 +1442,7 @@
           this.onTrigger(imgElement, tile);
         }
       }, true);
-      tile.appendChild(btnContainer);
+      mediaContainer.appendChild(btnContainer);
     }
     /**
      * Hides all active hover buttons immediately.
@@ -1094,149 +1454,6 @@
       }
     }
   };
-
-  // src/utils/srcset-parser.js
-  function parseSrcset(srcset) {
-    if (!srcset || typeof srcset !== "string") {
-      return [];
-    }
-    const trimmed = srcset.trim();
-    if (!trimmed) {
-      return [];
-    }
-    const candidateRegex = /(?:^|,)\s*([^\s]+)\s*(?:([0-9.]+)w|([0-9.]+)x)?/g;
-    const candidates = [];
-    let match;
-    while ((match = candidateRegex.exec(trimmed)) !== null) {
-      const rawUrl = match[1];
-      if (!rawUrl) continue;
-      const widthDesc = match[2] ? parseFloat(match[2]) : 0;
-      const densityDesc = match[3] ? parseFloat(match[3]) : 0;
-      let effectiveWidth = widthDesc;
-      if (!effectiveWidth && densityDesc) {
-        effectiveWidth = Math.round(densityDesc * 640);
-      }
-      if (!effectiveWidth) {
-        effectiveWidth = extractWidthFromUrl(rawUrl);
-      }
-      candidates.push({
-        url: rawUrl,
-        width: effectiveWidth,
-        density: densityDesc || 1
-      });
-    }
-    candidates.sort((a, b) => b.width - a.width);
-    return candidates;
-  }
-  function extractWidthFromUrl(url) {
-    if (!url || typeof url !== "string") return 0;
-    const match = url.match(/[sp]?(\d{3,4})x(\d{3,4})/i) || url.match(/c\d+\.\d+\.(\d{3,4})\.(\d{3,4})/i) || url.match(/[_\-/](\d{3,4})w/i);
-    if (match) {
-      return parseInt(match[1], 10);
-    }
-    return 0;
-  }
-  function extractFromReactFiber(element) {
-    if (!element || typeof element !== "object") return null;
-    let curr = element;
-    for (let depth = 0; depth < 5 && curr; depth++) {
-      const propsKey = Object.keys(curr).find((k) => k.startsWith("__reactProps$"));
-      if (propsKey && curr[propsKey]) {
-        const match = searchMediaProps(curr[propsKey], 0);
-        if (match) return match;
-      }
-      const fiberKey = Object.keys(curr).find((k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));
-      if (fiberKey && curr[fiberKey]) {
-        let fiber = curr[fiberKey];
-        for (let fDepth = 0; fDepth < 8 && fiber; fDepth++) {
-          const match = searchMediaProps(fiber.memoizedProps, 0) || searchMediaProps(fiber.pendingProps, 0);
-          if (match) return match;
-          fiber = fiber.return;
-        }
-      }
-      curr = curr.parentElement;
-    }
-    return null;
-  }
-  function searchMediaProps(obj, depth = 0) {
-    if (!obj || typeof obj !== "object" || depth > 4) return null;
-    if (obj.image_versions2?.candidates && Array.isArray(obj.image_versions2.candidates)) {
-      const sorted = [...obj.image_versions2.candidates].sort((a, b) => (b.width || 0) - (a.width || 0));
-      if (sorted[0]?.url) {
-        return {
-          url: sorted[0].url,
-          width: sorted[0].width || 1080,
-          height: sorted[0].height || 1080
-        };
-      }
-    }
-    if (obj.display_resources && Array.isArray(obj.display_resources)) {
-      const sorted = [...obj.display_resources].sort((a, b) => (b.config_width || 0) - (a.config_width || 0));
-      if (sorted[0]?.src) {
-        return {
-          url: sorted[0].src,
-          width: sorted[0].config_width || 1080,
-          height: sorted[0].config_height || 1080
-        };
-      }
-    }
-    if (typeof obj.display_url === "string" && obj.display_url.startsWith("http")) {
-      return {
-        url: obj.display_url,
-        width: obj.dimensions?.width || 1080,
-        height: obj.dimensions?.height || 1080
-      };
-    }
-    const interestingKeys = ["post", "media", "item", "carousel_media", "node"];
-    for (const key of interestingKeys) {
-      if (obj[key]) {
-        const match = searchMediaProps(obj[key], depth + 1);
-        if (match) return match;
-      }
-    }
-    return null;
-  }
-  function getResolutionCandidates(imgElement) {
-    if (!imgElement) return [];
-    const candidates = [];
-    const seenUrls = /* @__PURE__ */ new Set();
-    try {
-      const fiberCandidate = extractFromReactFiber(imgElement);
-      if (fiberCandidate?.url && !seenUrls.has(fiberCandidate.url)) {
-        seenUrls.add(fiberCandidate.url);
-        candidates.push({
-          url: fiberCandidate.url,
-          width: fiberCandidate.width || 1080
-        });
-      }
-    } catch {
-    }
-    const srcset = (typeof imgElement.getAttribute === "function" ? imgElement.getAttribute("srcset") : imgElement.srcset) || "";
-    const parsed = parseSrcset(srcset);
-    for (const item of parsed) {
-      if (item.url && !seenUrls.has(item.url)) {
-        seenUrls.add(item.url);
-        candidates.push({
-          url: item.url,
-          width: item.width || 640
-        });
-      }
-    }
-    const fallbackUrl = imgElement.currentSrc || imgElement.src || "";
-    if (fallbackUrl && !seenUrls.has(fallbackUrl)) {
-      seenUrls.add(fallbackUrl);
-      candidates.push({
-        url: fallbackUrl,
-        width: extractWidthFromUrl(fallbackUrl) || 640
-      });
-    }
-    candidates.sort((a, b) => b.width - a.width);
-    return candidates;
-  }
-  function getHighestResolutionUrl(imgElement) {
-    const candidates = getResolutionCandidates(imgElement);
-    return candidates.length > 0 ? candidates[0].url : imgElement?.currentSrc || imgElement?.src || "";
-  }
 
   // src/modules/media-detector.js
   var MediaDetector = class {
@@ -1375,6 +1592,7 @@
     /**
      * Synchronizes and sorts all legitimate post tiles visible in the DOM
      * in visual reading order (top-to-bottom, left-to-right).
+     * Preserves previously discovered slides across DOM unmounts.
      *
      * @param {Array<{img: HTMLImageElement, container: HTMLElement}>} mediaEntries
      * @returns {Array<Object>}
@@ -1410,8 +1628,9 @@
       sortedTiles.forEach((group, postIndex) => {
         const { tile } = group;
         const postImages = findPostImages(tile);
-        const uniqueSlides = [];
-        const seenUrls = /* @__PURE__ */ new Set();
+        const existing = this.posts.find((p) => p.tile === tile);
+        const uniqueSlides = existing ? [...existing.slides] : [];
+        const seenUrls = new Set(uniqueSlides.map((s) => s.url));
         for (const imgEl of postImages) {
           const url = getHighestResolutionUrl(imgEl);
           if (url && !seenUrls.has(url)) {
@@ -1424,18 +1643,39 @@
             });
           }
         }
+        const isCarousel = existing && existing.isCarousel || uniqueSlides.length > 1 || isCarouselPost(tile);
+        const estCount = getEstimatedSlideCount(tile);
+        const totalSlides = Math.max(existing?.totalSlides || 0, estCount, uniqueSlides.length);
         if (uniqueSlides.length > 0) {
           newPosts.push({
-            id: `post-${postIndex}-${uniqueSlides[0].url.slice(-12)}`,
+            id: existing?.id || `post-${postIndex}-${uniqueSlides[0].url.slice(-12)}`,
             tile,
             slides: uniqueSlides,
-            isCarousel: uniqueSlides.length > 1
+            isCarousel,
+            totalSlides
           });
         }
       });
       this.posts = newPosts;
       this._notify();
       return this.posts;
+    }
+    /**
+     * Appends a newly discovered slide to a specific post without duplicating.
+     *
+     * @param {Object} post
+     * @param {Object} slide
+     * @returns {Object}
+     */
+    appendSlide(post, slide) {
+      if (!post || !slide || !slide.url) return post;
+      if (!post.slides.some((s) => s.url === slide.url)) {
+        post.slides.push(slide);
+        post.isCarousel = true;
+        post.totalSlides = Math.max(post.totalSlides || 0, post.slides.length);
+        this._notify();
+      }
+      return post;
     }
     /**
      * Finds the post index and slide index for a clicked image.

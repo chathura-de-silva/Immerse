@@ -5,17 +5,24 @@
  */
 
 import { getHighestResolutionUrl } from '../utils/srcset-parser.js';
-import { findClosestPost, findPostImages, isLegitimatePostImage } from '../utils/dom-helpers.js';
+import {
+  findClosestPost,
+  findPostImages,
+  isLegitimatePostImage,
+  isCarouselPost,
+  getEstimatedSlideCount
+} from '../utils/dom-helpers.js';
 
 export class GallerySequencer {
   constructor() {
-    this.posts = []; // Array of { id, postElement, tile, slides: [{ url, width, height, element }] }
+    this.posts = []; // Array of { id, postElement, tile, slides: [{ url, width, height, element }], isCarousel, totalSlides }
     this.listeners = new Set();
   }
 
   /**
    * Synchronizes and sorts all legitimate post tiles visible in the DOM
    * in visual reading order (top-to-bottom, left-to-right).
+   * Preserves previously discovered slides across DOM unmounts.
    *
    * @param {Array<{img: HTMLImageElement, container: HTMLElement}>} mediaEntries
    * @returns {Array<Object>}
@@ -61,8 +68,11 @@ export class GallerySequencer {
     sortedTiles.forEach((group, postIndex) => {
       const { tile } = group;
       const postImages = findPostImages(tile);
-      const uniqueSlides = [];
-      const seenUrls = new Set();
+
+      // Check if we already have an existing post registered for this tile
+      const existing = this.posts.find(p => p.tile === tile);
+      const uniqueSlides = existing ? [...existing.slides] : [];
+      const seenUrls = new Set(uniqueSlides.map(s => s.url));
 
       for (const imgEl of postImages) {
         const url = getHighestResolutionUrl(imgEl);
@@ -77,12 +87,17 @@ export class GallerySequencer {
         }
       }
 
+      const isCarousel = (existing && existing.isCarousel) || uniqueSlides.length > 1 || isCarouselPost(tile);
+      const estCount = getEstimatedSlideCount(tile);
+      const totalSlides = Math.max(existing?.totalSlides || 0, estCount, uniqueSlides.length);
+
       if (uniqueSlides.length > 0) {
         newPosts.push({
-          id: `post-${postIndex}-${uniqueSlides[0].url.slice(-12)}`,
+          id: existing?.id || `post-${postIndex}-${uniqueSlides[0].url.slice(-12)}`,
           tile,
           slides: uniqueSlides,
-          isCarousel: uniqueSlides.length > 1
+          isCarousel,
+          totalSlides
         });
       }
     });
@@ -90,6 +105,24 @@ export class GallerySequencer {
     this.posts = newPosts;
     this._notify();
     return this.posts;
+  }
+
+  /**
+   * Appends a newly discovered slide to a specific post without duplicating.
+   *
+   * @param {Object} post
+   * @param {Object} slide
+   * @returns {Object}
+   */
+  appendSlide(post, slide) {
+    if (!post || !slide || !slide.url) return post;
+    if (!post.slides.some(s => s.url === slide.url)) {
+      post.slides.push(slide);
+      post.isCarousel = true;
+      post.totalSlides = Math.max(post.totalSlides || 0, post.slides.length);
+      this._notify();
+    }
+    return post;
   }
 
   /**

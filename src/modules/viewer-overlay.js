@@ -5,7 +5,15 @@
  * true infinite feed loading, and zero-fragile design.
  */
 
-import { createElement } from '../utils/dom-helpers.js';
+import {
+  createElement,
+  findPostImages,
+  isCarouselPost,
+  getEstimatedSlideCount,
+  findNativeCarouselNextButton,
+  findNativeCarouselPrevButton
+} from '../utils/dom-helpers.js';
+import { getHighestResolutionUrl } from '../utils/srcset-parser.js';
 
 export class ViewerOverlay {
   constructor(options = {}) {
@@ -350,6 +358,16 @@ export class ViewerOverlay {
   updatePosts(newPosts) {
     if (!newPosts || newPosts.length === 0) return;
     const oldLength = this.posts.length;
+
+    // Maintain currentPostIndex aligned with the currently active post
+    const activePost = this.posts[this.currentPostIndex];
+    if (activePost) {
+      const newActiveIdx = newPosts.findIndex(p => p.id === activePost.id || (p.tile && p.tile === activePost.tile));
+      if (newActiveIdx !== -1) {
+        this.currentPostIndex = newActiveIdx;
+      }
+    }
+
     this.posts = newPosts;
 
     if (this._waitingForNextPost && this.posts.length > oldLength) {
@@ -357,7 +375,41 @@ export class ViewerOverlay {
       this.goToPost(oldLength, 0);
     } else {
       this._updateHeaderCounter();
+      const curr = this.posts[this.currentPostIndex];
+      if (curr) {
+        this._updateCarouselControls(curr);
+      }
     }
+  }
+
+  /**
+   * Synchronizes and accumulates any newly mounted slides for the given post.
+   *
+   * @param {Object} post
+   */
+  _syncPostSlides(post) {
+    if (!post || !post.tile) return;
+    const postImages = findPostImages(post.tile);
+    const seenUrls = new Set(post.slides.map(s => s.url));
+
+    for (const imgEl of postImages) {
+      const url = getHighestResolutionUrl(imgEl);
+      if (url && !seenUrls.has(url)) {
+        seenUrls.add(url);
+        post.slides.push({
+          url,
+          width: imgEl.naturalWidth || 1080,
+          height: imgEl.naturalHeight || 1080,
+          element: imgEl
+        });
+      }
+    }
+
+    if (!post.isCarousel) {
+      post.isCarousel = post.slides.length > 1 || isCarouselPost(post.tile);
+    }
+    const estCount = getEstimatedSlideCount(post.tile);
+    post.totalSlides = Math.max(post.totalSlides || 0, estCount, post.slides.length);
   }
 
   /**
@@ -422,6 +474,16 @@ export class ViewerOverlay {
     const post = this.posts[this.currentPostIndex];
     if (!post || !post.slides || post.slides.length === 0) return;
 
+    if (this._transitionTimeout) {
+      clearTimeout(this._transitionTimeout);
+      this._transitionTimeout = null;
+    }
+    if (this._spinnerTimeout) {
+      clearTimeout(this._spinnerTimeout);
+      this._spinnerTimeout = null;
+    }
+
+    this._syncPostSlides(post);
     this.currentSlideIndex = Math.max(0, Math.min(this.currentSlideIndex, post.slides.length - 1));
     const slide = post.slides[this.currentSlideIndex];
 
@@ -433,6 +495,12 @@ export class ViewerOverlay {
     this.resetTransform();
     this._updateHeaderCounter();
     this._updateCarouselControls(post);
+
+    // If already showing this exact slide, don't re-trigger flash/animation
+    if (this.dom.img.src === slide.url && this.dom.img.style.opacity === '1') {
+      this._preloadAdjacent();
+      return;
+    }
 
     const targetPostIndex = this.currentPostIndex;
     const targetSlideIndex = this.currentSlideIndex;
@@ -544,7 +612,7 @@ export class ViewerOverlay {
       this._updateBadgeText(`${w} × ${h} • Highest Quality`);
 
       // Cleanup previous image layer after transition finishes
-      setTimeout(() => {
+      this._transitionTimeout = setTimeout(() => {
         if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
           this.dom.imgPrev.style.display = 'none';
           this.dom.imgPrev.style.transform = 'none';
@@ -581,22 +649,27 @@ export class ViewerOverlay {
   }
 
   _updateCarouselControls(post) {
-    if (!post || post.slides.length <= 1) {
+    if (!post || (!post.isCarousel && post.slides.length <= 1)) {
       this.dom.carouselCtrl.style.display = 'none';
       return;
     }
 
     this.dom.carouselCtrl.style.display = 'flex';
-    const totalSlides = post.slides.length;
+    const totalSlides = Math.max(post.totalSlides || 0, post.slides.length);
     const currentSlideNum = this.currentSlideIndex + 1;
 
     this.dom.carouselLabel.textContent = `Slide ${currentSlideNum} of ${totalSlides}`;
     this.dom.prevSlideBtn.disabled = this.currentSlideIndex === 0;
-    this.dom.nextSlideBtn.disabled = this.currentSlideIndex === totalSlides - 1;
+
+    // Check if further slides exist in memory or via native carousel next button
+    const hasNativeNext = !!findNativeCarouselNextButton(post.tile);
+    const hasMore = this.currentSlideIndex < totalSlides - 1 || hasNativeNext;
+    this.dom.nextSlideBtn.disabled = !hasMore;
 
     // Render slide dots
     this.dom.dotsContainer.innerHTML = '';
-    for (let i = 0; i < totalSlides; i++) {
+    const dotsCount = Math.max(totalSlides, post.slides.length);
+    for (let i = 0; i < dotsCount; i++) {
       const dot = createElement('div', {
         className: `immerse-dot ${i === this.currentSlideIndex ? 'immerse-dot-active' : ''}`,
         attributes: { title: `Go to slide ${i + 1}` },
@@ -686,8 +759,18 @@ export class ViewerOverlay {
     this._navDirection = 1;
     this.resetTransform();
     const post = this.posts[this.currentPostIndex];
-    if (post && this.currentSlideIndex < post.slides.length - 1) {
+    if (!post) return;
+
+    if (this.currentSlideIndex < post.slides.length - 1) {
       this.goToSlide(this.currentSlideIndex + 1);
+      this._prefetchNextNativeSlide(post);
+      return;
+    }
+
+    // At the end of currently collected slides: check if native carousel has more
+    const nativeNext = findNativeCarouselNextButton(post.tile);
+    if (nativeNext) {
+      this._advanceNativeCarouselAndGo(post, this.currentSlideIndex + 1);
     }
   }
 
@@ -704,8 +787,51 @@ export class ViewerOverlay {
     this._lastNavTime = Date.now();
     this._navDirection = slideIndex >= this.currentSlideIndex ? 1 : -1;
     this.resetTransform();
-    this.currentSlideIndex = slideIndex;
-    this.loadCurrent();
+    const post = this.posts[this.currentPostIndex];
+    if (!post) return;
+
+    if (slideIndex < post.slides.length) {
+      this.currentSlideIndex = slideIndex;
+      this.loadCurrent();
+    } else {
+      this._advanceNativeCarouselAndGo(post, slideIndex);
+    }
+  }
+
+  _advanceNativeCarouselAndGo(post, targetSlideIndex) {
+    const nativeNext = findNativeCarouselNextButton(post.tile);
+    if (!nativeNext) return;
+
+    nativeNext.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    nativeNext.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    let attempts = 0;
+    const pollInterval = setInterval(() => {
+      attempts++;
+      this._syncPostSlides(post);
+
+      if (post.slides.length > targetSlideIndex) {
+        clearInterval(pollInterval);
+        this.goToSlide(targetSlideIndex);
+      } else if (attempts >= 8) {
+        clearInterval(pollInterval);
+        this._updateCarouselControls(post);
+      }
+    }, 45);
+  }
+
+  _prefetchNextNativeSlide(post) {
+    const nativeNext = findNativeCarouselNextButton(post.tile);
+    if (!nativeNext) return;
+
+    if (this.currentSlideIndex >= post.slides.length - 2) {
+      nativeNext.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      nativeNext.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      setTimeout(() => {
+        this._syncPostSlides(post);
+        this._updateCarouselControls(post);
+      }, 80);
+    }
   }
 
   /* ---------------- Zoom & Pan Transforms ---------------- */

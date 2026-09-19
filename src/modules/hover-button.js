@@ -4,7 +4,7 @@
  * and activates whenever the cursor hovers ANYWHERE on the image tile in the grid or feed.
  */
 
-import { createElement, isLegitimatePostImage } from '../utils/dom-helpers.js';
+import { createElement, isLegitimatePostImage, findPostMediaContainer } from '../utils/dom-helpers.js';
 
 export class HoverButtonManager {
   /**
@@ -39,13 +39,18 @@ export class HoverButtonManager {
       const tile = target.closest('a[href*="/p/"]') ||
                    target.closest('article');
 
-      if (tile && this.tileToButtonMap.has(tile)) {
+      let btn = tile ? this.tileToButtonMap.get(tile) : null;
+      if (!btn && target) {
+        const media = findPostMediaContainer(target);
+        if (media) btn = this.tileToButtonMap.get(media);
+      }
+
+      if (btn) {
         if (hideTimer) {
           clearTimeout(hideTimer);
           hideTimer = null;
         }
 
-        const btn = this.tileToButtonMap.get(tile);
         if (this.activeButton && this.activeButton !== btn) {
           this.activeButton.classList.remove('immerse-visible');
         }
@@ -92,10 +97,13 @@ export class HoverButtonManager {
     if (!tile || this.tileToButtonMap.has(tile)) return;
     if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) return;
 
-    // Ensure tile has relative positioning context for placement
-    const tileStyle = window.getComputedStyle(tile);
-    if (tileStyle.position === 'static') {
-      tile.style.position = 'relative';
+    // Position specifically inside the media/photo container, NOT over the article header/3-dot menu
+    const mediaContainer = findPostMediaContainer(imgElement);
+
+    // Ensure media container has relative positioning context for placement
+    const mediaStyle = window.getComputedStyle(mediaContainer);
+    if (mediaStyle.position === 'static') {
+      mediaContainer.style.position = 'relative';
     }
 
     // Build modern frosted glass button container
@@ -131,6 +139,9 @@ export class HoverButtonManager {
 
     btnContainer.appendChild(btn);
     this.tileToButtonMap.set(tile, btn);
+    if (mediaContainer !== tile) {
+      this.tileToButtonMap.set(mediaContainer, btn);
+    }
 
     // Also support direct image click if preferred in settings
     imgElement.addEventListener('click', (e) => {
@@ -144,7 +155,7 @@ export class HoverButtonManager {
       }
     }, true);
 
-    tile.appendChild(btnContainer);
+    mediaContainer.appendChild(btnContainer);
   }
 
   /**

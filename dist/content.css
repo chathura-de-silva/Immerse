@@ -72,10 +72,11 @@
   pointer-events: none;
 }
 
+/* Carousel navigator stays visible during idle mode so user always knows it is a carousel */
 .immerse-overlay-root.immerse-controls-hidden .immerse-carousel-controller {
-  opacity: 0;
-  transform: translateX(-50%) translateY(8px);
-  pointer-events: none;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
 }
 
 .immerse-overlay-root.immerse-controls-hidden .immerse-nav-btn {
@@ -457,9 +458,9 @@
 
 .immerse-hover-btn-container {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2147483640;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
   pointer-events: none;
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
