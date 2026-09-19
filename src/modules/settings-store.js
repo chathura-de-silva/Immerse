@@ -6,7 +6,7 @@
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: true,
   triggerMode: 'both', // 'both' | 'button-only' | 'image-click'
-  showResolutionBadge: true,
+  showResolutionBadge: false,
   wheelZoom: true,
   transitionStyle: 'parallax', // 'parallax' | 'slide'
   autoMaxRes: true

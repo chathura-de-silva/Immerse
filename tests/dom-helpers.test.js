@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   findPostMediaContainer,
   isCarouselPost,
-  getEstimatedSlideCount
+  getEstimatedSlideCount,
+  isLegitimatePhotoPost
 } from '../src/utils/dom-helpers.js';
 
 test('isCarouselPost identifies carousel from multiple images or text counter', () => {
@@ -34,4 +35,69 @@ test('findPostMediaContainer resolves post link if present', () => {
     closest: (selector) => selector.includes('a[href*="/p/"]') ? mockLink : null
   };
   assert.equal(findPostMediaContainer(mockImg), mockLink);
+});
+
+test('isLegitimatePhotoPost strictly rejects reels, videos, and sponsored ads', () => {
+  // 1. Reel post
+  const mockReel = {
+    matches: (sel) => sel.includes('/reel'),
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    innerText: ''
+  };
+  assert.equal(isLegitimatePhotoPost(mockReel), false);
+
+  // 2. Video post with <video> element
+  const mockVideo = {
+    matches: () => false,
+    querySelector: (sel) => sel.includes('video') ? { tagName: 'VIDEO' } : null,
+    querySelectorAll: () => [],
+    innerText: ''
+  };
+  assert.equal(isLegitimatePhotoPost(mockVideo), false);
+
+  // 3. Video post with audio/mute button
+  const mockAudioPost = {
+    matches: () => false,
+    querySelector: (sel) => sel.includes('Audio') ? { tagName: 'BUTTON' } : null,
+    querySelectorAll: () => [],
+    innerText: ''
+  };
+  assert.equal(isLegitimatePhotoPost(mockAudioPost), false);
+
+  // 4. Sponsored post with ad link
+  const mockAdPost = {
+    matches: () => false,
+    querySelector: (sel) => sel.includes('l.instagram.com') ? { tagName: 'A' } : null,
+    querySelectorAll: () => [],
+    innerText: ''
+  };
+  assert.equal(isLegitimatePhotoPost(mockAdPost), false);
+
+  // 5. Sponsored post with CTA button
+  const mockCtaAd = {
+    matches: () => false,
+    querySelector: () => null,
+    querySelectorAll: (sel) => sel.includes('button') ? [{ innerText: 'Shop Now' }] : [],
+    innerText: 'Discover brand new collection'
+  };
+  assert.equal(isLegitimatePhotoPost(mockCtaAd), false);
+
+  // 6. Sponsored post with Sponsored text in header
+  const mockSponsoredText = {
+    matches: () => false,
+    querySelector: (sel) => sel === 'header' ? { innerText: 'Sponsored' } : null,
+    querySelectorAll: () => [],
+    innerText: 'Sponsored'
+  };
+  assert.equal(isLegitimatePhotoPost(mockSponsoredText), false);
+
+  // 7. Legitimate photo post
+  const mockPhotoPost = {
+    matches: () => false,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    innerText: 'Beautiful sunset in the mountains #photography'
+  };
+  assert.equal(isLegitimatePhotoPost(mockPhotoPost), true);
 });

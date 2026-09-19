@@ -82,18 +82,17 @@ export class ViewerOverlay {
     // Header bar
     const header = createElement('div', { className: 'immerse-header' });
 
-    // Resolution badge
-    const badgeDot = createElement('span', { className: 'immerse-badge-dot' });
+    // Resolution badge (default off, clean text without green dot)
     const badgeText = createElement('span', {
       className: 'immerse-badge-text',
       textContent: 'Ultra-HD'
     });
-    const showBadge = this.options.showResolutionBadge !== false;
+    const showBadge = !!this.options.showResolutionBadge;
     const badge = createElement('div', {
       className: 'immerse-badge',
       style: { display: showBadge ? 'inline-flex' : 'none' }
     });
-    badge.append(badgeDot, badgeText);
+    badge.append(badgeText);
 
     // Photo counter pill (e.g. "Photo 1")
     const counterText = createElement('span', {
@@ -116,7 +115,7 @@ export class ViewerOverlay {
 
     // Fullscreen button
     const fullscreenBtn = createElement('button', {
-      className: 'immerse-btn',
+      className: 'immerse-btn immerse-btn-fullscreen',
       innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
       attributes: { title: 'Toggle Fullscreen (F)', 'aria-label': 'Toggle Fullscreen' },
       events: { click: () => this.toggleNativeFullscreen() }
@@ -241,7 +240,6 @@ export class ViewerOverlay {
       backdrop,
       header,
       badge,
-      badgeDot,
       badgeText,
       counter,
       counterText,
@@ -267,6 +265,7 @@ export class ViewerOverlay {
     document.addEventListener('mouseup', this._handleMouseUp);
     root.addEventListener('mousemove', this._handleRootMouseMove);
     root.addEventListener('pointerdown', this._handleRootPointerDown);
+    document.addEventListener('fullscreenchange', () => this._updateFullscreenButtonState());
   }
 
   /**
@@ -292,6 +291,8 @@ export class ViewerOverlay {
       this.dom.root.classList.add('immerse-active');
       this._resetIdleTimer();
       this._wakeCursor();
+      this._enterNativeFullscreen();
+      this._updateFullscreenButtonState();
     });
 
     this.isOpen = true;
@@ -422,7 +423,7 @@ export class ViewerOverlay {
 
     // Update resolution badge display dynamically
     if (this.dom?.badge) {
-      const showBadge = this.options.showResolutionBadge !== false;
+      const showBadge = !!this.options.showResolutionBadge;
       this.dom.badge.style.display = showBadge ? 'inline-flex' : 'none';
     }
   }
@@ -525,7 +526,6 @@ export class ViewerOverlay {
     this._spinnerTimeout = setTimeout(() => {
       if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
         this.dom.spinner.classList.add('immerse-spinner-visible');
-        this.dom.badgeDot.classList.add('immerse-badge-dot-loading');
         this._updateBadgeText('Loading Ultra-HD...');
       }
     }, 220);
@@ -612,7 +612,6 @@ export class ViewerOverlay {
       }
 
       this.dom.spinner.classList.remove('immerse-spinner-visible');
-      this.dom.badgeDot.classList.remove('immerse-badge-dot-loading');
 
       const w = tempImg.naturalWidth;
       const h = tempImg.naturalHeight;
@@ -636,7 +635,6 @@ export class ViewerOverlay {
       if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
       if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
       this.dom.spinner.classList.remove('immerse-spinner-visible');
-      this.dom.badgeDot.classList.remove('immerse-badge-dot-loading');
       this.dom.img.src = slide.url;
       this.dom.img.style.opacity = '1';
       this.dom.imgPrev.style.opacity = '0';
@@ -647,9 +645,20 @@ export class ViewerOverlay {
   }
 
   _updateHeaderCounter() {
-    const currentPostNum = this.currentPostIndex + 1;
+    const post = this.posts[this.currentPostIndex];
+    const isFeed = window.location.pathname === '/' ||
+                   window.location.pathname.startsWith('/feed') ||
+                   post?.tile?.tagName === 'ARTICLE' ||
+                   !!post?.tile?.closest?.('article');
 
-    this._updateCounterText(`Photo ${currentPostNum}`);
+    if (isFeed) {
+      this.dom.counter.style.display = 'none';
+    } else {
+      this.dom.counter.style.display = 'inline-flex';
+      const currentPostNum = this.currentPostIndex + 1;
+      this._updateCounterText(`Photo ${currentPostNum}`);
+    }
+
     this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
     // Keep next button clickable so user can trigger load-more at the end
     this.dom.nextPostBtn.disabled = false;
@@ -1128,11 +1137,35 @@ export class ViewerOverlay {
     }, 3200);
   }
 
+  _enterNativeFullscreen() {
+    if (!document.fullscreenElement && this.dom?.root?.requestFullscreen) {
+      this.dom.root.requestFullscreen().catch(() => {});
+    }
+  }
+
+  _updateFullscreenButtonState() {
+    if (!this.dom?.fullscreenBtn) return;
+    const isFs = !!document.fullscreenElement;
+    if (isFs) {
+      this.dom.fullscreenBtn.title = 'Back to Browser View (F)';
+      this.dom.fullscreenBtn.setAttribute('aria-label', 'Back to Browser View');
+      this.dom.fullscreenBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
+    } else {
+      this.dom.fullscreenBtn.title = 'Enter Fullscreen (F)';
+      this.dom.fullscreenBtn.setAttribute('aria-label', 'Enter Fullscreen');
+      this.dom.fullscreenBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+    }
+  }
+
   toggleNativeFullscreen() {
     if (!document.fullscreenElement) {
-      this.dom.root.requestFullscreen().catch(() => {});
+      if (this.dom?.root?.requestFullscreen) {
+        this.dom.root.requestFullscreen().catch(() => {});
+      }
     } else {
-      document.exitFullscreen().catch(() => {});
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
     }
   }
 }

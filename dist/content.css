@@ -88,8 +88,8 @@
 .immerse-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
+  justify-content: center;
+  padding: 6px 14px;
   background: var(--immerse-badge-bg);
   border: 1px solid var(--immerse-badge-border);
   border-radius: 999px;
@@ -118,27 +118,6 @@
 .immerse-badge-text.immerse-text-fading {
   opacity: 0;
   transform: translateY(-2px);
-}
-
-.immerse-badge-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: #2ed573;
-  box-shadow: 0 0 6px #2ed573;
-  flex-shrink: 0;
-  transition: background-color 0.25s ease, box-shadow 0.25s ease;
-}
-
-.immerse-badge-dot.immerse-badge-dot-loading {
-  background-color: #8ed0ff;
-  box-shadow: 0 0 6px #8ed0ff;
-  animation: immerse-pulse 1s ease-in-out infinite;
-}
-
-@keyframes immerse-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.35; transform: scale(0.8); }
 }
 
 /* Photo Counter Pill (Grid Navigation Index) */

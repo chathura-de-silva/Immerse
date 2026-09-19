@@ -9,6 +9,7 @@ import {
   findClosestPost,
   findPostImages,
   isLegitimatePostImage,
+  isLegitimatePhotoPost,
   isCarouselPost,
   getEstimatedSlideCount
 } from '../utils/dom-helpers.js';
@@ -40,8 +41,7 @@ export class GallerySequencer {
 
     for (const entry of validEntries) {
       const tile = entry.container || findClosestPost(entry.img);
-      if (!tile) continue;
-      if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) continue;
+      if (!tile || !isLegitimatePhotoPost(tile)) continue;
 
       if (!postMap.has(tile)) {
         postMap.set(tile, {

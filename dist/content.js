@@ -4,7 +4,7 @@
     enabled: true,
     triggerMode: "both",
     // 'both' | 'button-only' | 'image-click'
-    showResolutionBadge: true,
+    showResolutionBadge: false,
     wheelZoom: true,
     transitionStyle: "parallax",
     // 'parallax' | 'slide'
@@ -122,6 +122,44 @@
     }
     return el;
   }
+  function isLegitimatePhotoPost(container) {
+    if (!container) return false;
+    if (container.matches && (container.matches('a[href*="/reel"], a[href*="/reels"], a[href*="/tv/"]') || container.querySelector('a[href*="/reel"], a[href*="/reels"], a[href*="/tv/"]'))) {
+      return false;
+    }
+    if (container.querySelector && container.querySelector("video")) {
+      return false;
+    }
+    if (container.querySelector && container.querySelector(
+      'video, [aria-label*="Audio" i], [aria-label*="mute" i], [aria-label*="unmute" i], [aria-label*="sound" i], [aria-label*="volume" i], [aria-label*="Play" i], [aria-label*="Pause" i], [aria-label*="Reel" i], [aria-label*="Clip" i], [aria-label*="Video" i]'
+    )) {
+      return false;
+    }
+    if (container.querySelector && container.querySelector('a[href*="l.instagram.com"], a[href*="/ads/"], a[href*="about/ads"]')) {
+      return false;
+    }
+    if (container.querySelector && container.querySelector('[aria-label*="Sponsored" i], [aria-label*="Paid partnership" i]')) {
+      return false;
+    }
+    const header = container.querySelector ? container.querySelector("header") : null;
+    const headerText = (header ? header.innerText || header.textContent : "") || "";
+    if (/\b(Sponsored|Paid partnership)\b/i.test(headerText)) {
+      return false;
+    }
+    const topText = (container.innerText || container.textContent || "").slice(0, 800);
+    if (/\b(Sponsored|Paid partnership)\b/i.test(topText)) {
+      return false;
+    }
+    const adCtaRegex = /\b(Learn More|Shop Now|Install Now|Sign Up|Book Now|Apply Now|Get Offer|Order Now|Contact Us|Watch More|Subscribe|Send Message|Download|Listen Now|Play Game|Use App|Get Quote|Get Showtimes|Check Availability|Claim Offer|Open link)\b/i;
+    const buttons = container.querySelectorAll ? container.querySelectorAll('button, div[role="button"], a') : [];
+    for (const b of buttons) {
+      const bText = b.innerText || b.textContent || "";
+      if (adCtaRegex.test(bText)) {
+        return false;
+      }
+    }
+    return true;
+  }
   function isLegitimatePostImage(img) {
     if (!img || img.tagName !== "IMG") return false;
     const src = img.currentSrc || img.src || "";
@@ -133,6 +171,9 @@
     if (alt.includes("profile picture") || alt.includes("avatar") || alt.includes("story")) {
       return false;
     }
+    if (/\b(video|reel|clip)\b/i.test(alt)) {
+      return false;
+    }
     if (img.closest('header, nav, aside, div[role="tooltip"], div[role="menu"]')) {
       return false;
     }
@@ -141,22 +182,20 @@
     if (w > 0 && w < 160 || h > 0 && h < 160) {
       return false;
     }
-    if (img.closest('a[href*="/reel"]')) {
+    if (img.closest('a[href*="/reel"], a[href*="/reels"], a[href*="/tv/"]')) {
       return false;
     }
     const postLink = img.closest('a[href*="/p/"], article');
-    if (!postLink) {
-      return false;
-    }
-    if (postLink.matches('a[href*="/reel"]') || postLink.querySelector('a[href*="/reel"]')) {
+    if (!postLink || !isLegitimatePhotoPost(postLink)) {
       return false;
     }
     return true;
   }
   function findClosestPost(element) {
     if (!element) return null;
-    if (element.closest('a[href*="/reel"]')) return null;
-    return element.closest('a[href*="/p/"]') || element.closest("article") || element.closest('div[role="dialog"] a[href*="/p/"]');
+    const post = element.closest('a[href*="/p/"]') || element.closest("article") || element.closest('div[role="dialog"] a[href*="/p/"]');
+    if (!post || !isLegitimatePhotoPost(post)) return null;
+    return post;
   }
   function findPostImages(postContainer) {
     if (!postContainer) return [];
@@ -472,17 +511,16 @@
         } }
       });
       const header = createElement("div", { className: "immerse-header" });
-      const badgeDot = createElement("span", { className: "immerse-badge-dot" });
       const badgeText = createElement("span", {
         className: "immerse-badge-text",
         textContent: "Ultra-HD"
       });
-      const showBadge = this.options.showResolutionBadge !== false;
+      const showBadge = !!this.options.showResolutionBadge;
       const badge = createElement("div", {
         className: "immerse-badge",
         style: { display: showBadge ? "inline-flex" : "none" }
       });
-      badge.append(badgeDot, badgeText);
+      badge.append(badgeText);
       const counterText = createElement("span", {
         className: "immerse-counter-text",
         textContent: "Photo 1"
@@ -497,7 +535,7 @@
         events: { click: () => this.resetTransform() }
       });
       const fullscreenBtn = createElement("button", {
-        className: "immerse-btn",
+        className: "immerse-btn immerse-btn-fullscreen",
         innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
         attributes: { title: "Toggle Fullscreen (F)", "aria-label": "Toggle Fullscreen" },
         events: { click: () => this.toggleNativeFullscreen() }
@@ -621,7 +659,6 @@
         backdrop,
         header,
         badge,
-        badgeDot,
         badgeText,
         counter,
         counterText,
@@ -646,6 +683,7 @@
       document.addEventListener("mouseup", this._handleMouseUp);
       root.addEventListener("mousemove", this._handleRootMouseMove);
       root.addEventListener("pointerdown", this._handleRootPointerDown);
+      document.addEventListener("fullscreenchange", () => this._updateFullscreenButtonState());
     }
     /**
      * Opens the lightbox overlay with the complete gallery of posts.
@@ -667,6 +705,8 @@
         this.dom.root.classList.add("immerse-active");
         this._resetIdleTimer();
         this._wakeCursor();
+        this._enterNativeFullscreen();
+        this._updateFullscreenButtonState();
       });
       this.isOpen = true;
       document.addEventListener("keydown", this._handleKeyDown, true);
@@ -775,7 +815,7 @@
     updateSettings(newSettings = {}) {
       this.options = { ...this.options, ...newSettings };
       if (this.dom?.badge) {
-        const showBadge = this.options.showResolutionBadge !== false;
+        const showBadge = !!this.options.showResolutionBadge;
         this.dom.badge.style.display = showBadge ? "inline-flex" : "none";
       }
     }
@@ -857,7 +897,6 @@
       this._spinnerTimeout = setTimeout(() => {
         if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
           this.dom.spinner.classList.add("immerse-spinner-visible");
-          this.dom.badgeDot.classList.add("immerse-badge-dot-loading");
           this._updateBadgeText("Loading Ultra-HD...");
         }
       }, 220);
@@ -920,7 +959,6 @@
           });
         }
         this.dom.spinner.classList.remove("immerse-spinner-visible");
-        this.dom.badgeDot.classList.remove("immerse-badge-dot-loading");
         const w = tempImg.naturalWidth;
         const h = tempImg.naturalHeight;
         this._updateBadgeText(`${w} \xD7 ${h} \u2022 Highest Quality`);
@@ -939,7 +977,6 @@
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
         if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
         this.dom.spinner.classList.remove("immerse-spinner-visible");
-        this.dom.badgeDot.classList.remove("immerse-badge-dot-loading");
         this.dom.img.src = slide.url;
         this.dom.img.style.opacity = "1";
         this.dom.imgPrev.style.opacity = "0";
@@ -948,8 +985,15 @@
       tempImg.src = slide.url;
     }
     _updateHeaderCounter() {
-      const currentPostNum = this.currentPostIndex + 1;
-      this._updateCounterText(`Photo ${currentPostNum}`);
+      const post = this.posts[this.currentPostIndex];
+      const isFeed = window.location.pathname === "/" || window.location.pathname.startsWith("/feed") || post?.tile?.tagName === "ARTICLE" || !!post?.tile?.closest?.("article");
+      if (isFeed) {
+        this.dom.counter.style.display = "none";
+      } else {
+        this.dom.counter.style.display = "inline-flex";
+        const currentPostNum = this.currentPostIndex + 1;
+        this._updateCounterText(`Photo ${currentPostNum}`);
+      }
       this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
       this.dom.nextPostBtn.disabled = false;
     }
@@ -1325,13 +1369,36 @@
         }
       }, 3200);
     }
-    toggleNativeFullscreen() {
-      if (!document.fullscreenElement) {
+    _enterNativeFullscreen() {
+      if (!document.fullscreenElement && this.dom?.root?.requestFullscreen) {
         this.dom.root.requestFullscreen().catch(() => {
         });
+      }
+    }
+    _updateFullscreenButtonState() {
+      if (!this.dom?.fullscreenBtn) return;
+      const isFs = !!document.fullscreenElement;
+      if (isFs) {
+        this.dom.fullscreenBtn.title = "Back to Browser View (F)";
+        this.dom.fullscreenBtn.setAttribute("aria-label", "Back to Browser View");
+        this.dom.fullscreenBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
       } else {
-        document.exitFullscreen().catch(() => {
-        });
+        this.dom.fullscreenBtn.title = "Enter Fullscreen (F)";
+        this.dom.fullscreenBtn.setAttribute("aria-label", "Enter Fullscreen");
+        this.dom.fullscreenBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+      }
+    }
+    toggleNativeFullscreen() {
+      if (!document.fullscreenElement) {
+        if (this.dom?.root?.requestFullscreen) {
+          this.dom.root.requestFullscreen().catch(() => {
+          });
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {
+          });
+        }
       }
     }
   };
@@ -1362,6 +1429,7 @@
         const target = e.target;
         if (!target) return;
         const tile = target.closest('a[href*="/p/"]') || target.closest("article");
+        if (tile && !isLegitimatePhotoPost(tile)) return;
         let btn = tile ? this.tileToButtonMap.get(tile) : null;
         if (!btn && target) {
           const media = findPostMediaContainer(target);
@@ -1405,8 +1473,7 @@
     attach(imgElement, container) {
       if (!imgElement || !isLegitimatePostImage(imgElement)) return;
       const tile = imgElement.closest('a[href*="/p/"]') || imgElement.closest("article") || container;
-      if (!tile || this.tileToButtonMap.has(tile)) return;
-      if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) return;
+      if (!tile || !isLegitimatePhotoPost(tile) || this.tileToButtonMap.has(tile)) return;
       const mediaContainer = findPostMediaContainer(imgElement);
       const mediaStyle = window.getComputedStyle(mediaContainer);
       if (mediaStyle.position === "static") {
@@ -1537,7 +1604,7 @@
         postTiles.push(root);
       }
       for (const tile of postTiles) {
-        if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) {
+        if (!isLegitimatePhotoPost(tile)) {
           continue;
         }
         const images = Array.from(tile.querySelectorAll("img[src], img[srcset]"));
@@ -1614,8 +1681,7 @@
       const postMap = /* @__PURE__ */ new Map();
       for (const entry of validEntries) {
         const tile = entry.container || findClosestPost(entry.img);
-        if (!tile) continue;
-        if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) continue;
+        if (!tile || !isLegitimatePhotoPost(tile)) continue;
         if (!postMap.has(tile)) {
           postMap.set(tile, {
             tile,

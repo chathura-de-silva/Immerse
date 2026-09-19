@@ -4,7 +4,7 @@
  * and activates whenever the cursor hovers ANYWHERE on the image tile in the grid or feed.
  */
 
-import { createElement, isLegitimatePostImage, findPostMediaContainer } from '../utils/dom-helpers.js';
+import { createElement, isLegitimatePostImage, findPostMediaContainer, isLegitimatePhotoPost } from '../utils/dom-helpers.js';
 
 export class HoverButtonManager {
   /**
@@ -38,6 +38,8 @@ export class HoverButtonManager {
       // Strictly match photo post grid links or post articles (never reels, hovercards, avatars, or dialogs)
       const tile = target.closest('a[href*="/p/"]') ||
                    target.closest('article');
+
+      if (tile && !isLegitimatePhotoPost(tile)) return;
 
       let btn = tile ? this.tileToButtonMap.get(tile) : null;
       if (!btn && target) {
@@ -94,8 +96,7 @@ export class HoverButtonManager {
                  imgElement.closest('article') ||
                  container;
 
-    if (!tile || this.tileToButtonMap.has(tile)) return;
-    if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) return;
+    if (!tile || !isLegitimatePhotoPost(tile) || this.tileToButtonMap.has(tile)) return;
 
     // Position specifically inside the media/photo container, NOT over the article header/3-dot menu
     const mediaContainer = findPostMediaContainer(imgElement);

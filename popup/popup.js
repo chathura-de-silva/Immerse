@@ -6,7 +6,7 @@
 const DEFAULT_SETTINGS = {
   enabled: true,
   triggerMode: 'both',
-  showResolutionBadge: true,
+  showResolutionBadge: false,
   wheelZoom: true,
   transitionStyle: 'parallax'
 };

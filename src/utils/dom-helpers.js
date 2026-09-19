@@ -78,8 +78,69 @@ export function rafDebounce(fn) {
 }
 
 /**
+ * Strict validator that checks if a post container is a legitimate photo or carousel post,
+ * explicitly rejecting Instagram Reels, video posts, and Sponsored ads.
+ *
+ * @param {HTMLElement} container
+ * @returns {boolean}
+ */
+export function isLegitimatePhotoPost(container) {
+  if (!container) return false;
+
+  // 1. Explicitly reject reels or video links/paths
+  if (container.matches && (container.matches('a[href*="/reel"], a[href*="/reels"], a[href*="/tv/"]') || container.querySelector('a[href*="/reel"], a[href*="/reels"], a[href*="/tv/"]'))) {
+    return false;
+  }
+
+  // 2. Reject videos: if post contains a <video> element or video controls
+  if (container.querySelector && container.querySelector('video')) {
+    return false;
+  }
+  if (container.querySelector && container.querySelector(
+    'video, [aria-label*="Audio" i], [aria-label*="mute" i], [aria-label*="unmute" i], [aria-label*="sound" i], [aria-label*="volume" i], [aria-label*="Play" i], [aria-label*="Pause" i], [aria-label*="Reel" i], [aria-label*="Clip" i], [aria-label*="Video" i]'
+  )) {
+    return false;
+  }
+
+  // 3. Reject Sponsored Ads:
+  // Outgoing ad tracking link or ad settings
+  if (container.querySelector && container.querySelector('a[href*="l.instagram.com"], a[href*="/ads/"], a[href*="about/ads"]')) {
+    return false;
+  }
+
+  // Sponsored aria-label indicators
+  if (container.querySelector && container.querySelector('[aria-label*="Sponsored" i], [aria-label*="Paid partnership" i]')) {
+    return false;
+  }
+
+  // Header or top text of post containing "Sponsored" or "Paid partnership"
+  const header = container.querySelector ? container.querySelector('header') : null;
+  const headerText = (header ? header.innerText || header.textContent : '') || '';
+  if (/\b(Sponsored|Paid partnership)\b/i.test(headerText)) {
+    return false;
+  }
+
+  const topText = (container.innerText || container.textContent || '').slice(0, 800);
+  if (/\b(Sponsored|Paid partnership)\b/i.test(topText)) {
+    return false;
+  }
+
+  // Check for ad call-to-action buttons
+  const adCtaRegex = /\b(Learn More|Shop Now|Install Now|Sign Up|Book Now|Apply Now|Get Offer|Order Now|Contact Us|Watch More|Subscribe|Send Message|Download|Listen Now|Play Game|Use App|Get Quote|Get Showtimes|Check Availability|Claim Offer|Open link)\b/i;
+  const buttons = container.querySelectorAll ? container.querySelectorAll('button, div[role="button"], a') : [];
+  for (const b of buttons) {
+    const bText = b.innerText || b.textContent || '';
+    if (adCtaRegex.test(bText)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Strict validator that checks if an image is a genuine post/grid photo,
- * explicitly rejecting profile avatars, hovercard popups, story rings, and icons.
+ * explicitly rejecting profile avatars, hovercard popups, story rings, icons, reels, and ads.
  *
  * @param {HTMLImageElement} img
  * @returns {boolean}
@@ -95,9 +156,12 @@ export function isLegitimatePostImage(img) {
     return false;
   }
 
-  // 2. Reject avatars, story bubbles, and profile pictures
+  // 2. Reject avatars, story bubbles, profile pictures, and video poster frames
   const alt = (img.alt || '').toLowerCase();
   if (alt.includes('profile picture') || alt.includes('avatar') || alt.includes('story')) {
+    return false;
+  }
+  if (/\b(video|reel|clip)\b/i.test(alt)) {
     return false;
   }
 
@@ -114,17 +178,13 @@ export function isLegitimatePostImage(img) {
   }
 
   // 5. Explicitly reject Instagram Reels (videos)
-  if (img.closest('a[href*="/reel"]')) {
+  if (img.closest('a[href*="/reel"], a[href*="/reels"], a[href*="/tv/"]')) {
     return false;
   }
 
-  // 6. Must reside within a legitimate photo post link or article
+  // 6. Must reside within a legitimate photo post link or article (never a video post or sponsored ad)
   const postLink = img.closest('a[href*="/p/"], article');
-  if (!postLink) {
-    return false;
-  }
-
-  if (postLink.matches('a[href*="/reel"]') || postLink.querySelector('a[href*="/reel"]')) {
+  if (!postLink || !isLegitimatePhotoPost(postLink)) {
     return false;
   }
 
@@ -140,13 +200,15 @@ export function isLegitimatePostImage(img) {
  */
 export function findClosestPost(element) {
   if (!element) return null;
-  if (element.closest('a[href*="/reel"]')) return null;
 
-  return (
+  const post = (
     element.closest('a[href*="/p/"]') ||
     element.closest('article') ||
     element.closest('div[role="dialog"] a[href*="/p/"]')
   );
+
+  if (!post || !isLegitimatePhotoPost(post)) return null;
+  return post;
 }
 
 /**

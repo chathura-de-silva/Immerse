@@ -5,7 +5,7 @@
  */
 
 import { getHighestResolutionUrl } from '../utils/srcset-parser.js';
-import { findClosestPost, findPostImages, isLegitimatePostImage } from '../utils/dom-helpers.js';
+import { findClosestPost, findPostImages, isLegitimatePostImage, isLegitimatePhotoPost } from '../utils/dom-helpers.js';
 
 export class MediaDetector {
   /**
@@ -89,8 +89,8 @@ export class MediaDetector {
     }
 
     for (const tile of postTiles) {
-      // Explicitly skip Instagram Reels
-      if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) {
+      // Explicitly skip Instagram Reels, video posts, and Sponsored ads
+      if (!isLegitimatePhotoPost(tile)) {
         continue;
       }
 
