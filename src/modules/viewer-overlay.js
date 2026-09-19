@@ -31,6 +31,7 @@ export class ViewerOverlay {
 
     // Idle auto-hide timer & navigation debounce
     this._idleTimer = null;
+    this._cursorTimer = null;
     this._lastNavTime = 0;
     this.dom = null;
 
@@ -40,7 +41,10 @@ export class ViewerOverlay {
     this._handleMouseMove = this._handleMouseMove.bind(this);
     this._handleMouseUp = this._handleMouseUp.bind(this);
     this._handleDblClick = this._handleDblClick.bind(this);
+    this._handleRootMouseMove = this._handleRootMouseMove.bind(this);
+    this._handleRootPointerDown = this._handleRootPointerDown.bind(this);
     this._resetIdleTimer = this._resetIdleTimer.bind(this);
+    this._wakeCursor = this._wakeCursor.bind(this);
   }
 
   /**
@@ -230,8 +234,8 @@ export class ViewerOverlay {
 
     document.addEventListener('mousemove', this._handleMouseMove);
     document.addEventListener('mouseup', this._handleMouseUp);
-    root.addEventListener('mousemove', this._resetIdleTimer);
-    root.addEventListener('pointerdown', this._resetIdleTimer);
+    root.addEventListener('mousemove', this._handleRootMouseMove);
+    root.addEventListener('pointerdown', this._handleRootPointerDown);
   }
 
   /**
@@ -256,6 +260,7 @@ export class ViewerOverlay {
     requestAnimationFrame(() => {
       this.dom.root.classList.add('immerse-active');
       this._resetIdleTimer();
+      this._wakeCursor();
     });
 
     this.isOpen = true;
@@ -272,11 +277,17 @@ export class ViewerOverlay {
 
     this.dom.root.classList.remove('immerse-active');
     this.dom.root.classList.remove('immerse-controls-hidden');
+    this.dom.root.classList.remove('immerse-cursor-hidden');
     document.removeEventListener('keydown', this._handleKeyDown, true);
 
     if (this._idleTimer) {
       clearTimeout(this._idleTimer);
       this._idleTimer = null;
+    }
+
+    if (this._cursorTimer) {
+      clearTimeout(this._cursorTimer);
+      this._cursorTimer = null;
     }
 
     this.isOpen = false;
@@ -569,7 +580,6 @@ export class ViewerOverlay {
     if (Date.now() - this._lastNavTime < 350) return;
 
     e.preventDefault();
-    this._resetIdleTimer();
 
     if (this.scale > 1.1) {
       this.resetTransform();
@@ -656,6 +666,87 @@ export class ViewerOverlay {
         this._applyTransform(true);
         break;
     }
+  }
+
+  /**
+   * Determines if a mouse event's coordinates are situated directly inside the image bounds.
+   *
+   * @param {MouseEvent|PointerEvent} e
+   * @returns {boolean}
+   */
+  _isCursorInsideImage(e) {
+    if (!this.dom?.img || !this.isOpen) return false;
+
+    // Direct hover on an interactive UI control is always treated as control interaction
+    if (e.target?.closest?.('.immerse-header, .immerse-nav-btn, .immerse-carousel-controller, .immerse-btn')) {
+      return false;
+    }
+
+    // Edge control trigger zones (top header, bottom carousel, side navigation arrows)
+    // Moving cursor to extreme edges triggers controls even when zoomed in
+    const edgeMarginX = 55;
+    const edgeMarginY = 50;
+    const isNearScreenEdge = (
+      e.clientY <= edgeMarginY ||
+      e.clientY >= window.innerHeight - edgeMarginY ||
+      e.clientX <= edgeMarginX ||
+      e.clientX >= window.innerWidth - edgeMarginX
+    );
+    if (isNearScreenEdge) {
+      return false;
+    }
+
+    // Check if cursor coordinates fall inside the rendered image rectangle
+    const rect = this.dom.img.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+
+    return (
+      e.clientX >= rect.left &&
+      e.clientX <= rect.right &&
+      e.clientY >= rect.top &&
+      e.clientY <= rect.bottom
+    );
+  }
+
+  _handleRootMouseMove(e) {
+    if (!this.isOpen) return;
+
+    // Wake cursor pointer on mouse movement
+    this._wakeCursor();
+
+    // If mouse moves inside the image bounds, DO NOT wake controls or reset idle timer
+    if (this._isCursorInsideImage(e)) {
+      return;
+    }
+
+    // Moving outside the image bounds or over control trigger zones: wake controls
+    this._resetIdleTimer();
+  }
+
+  _handleRootPointerDown(e) {
+    if (!this.isOpen) return;
+
+    this._wakeCursor();
+
+    // Clicking inside the image (e.g. dragging to pan) does not wake controls
+    if (this._isCursorInsideImage(e)) {
+      return;
+    }
+
+    // Clicking outside the image or on controls wakes controls
+    this._resetIdleTimer();
+  }
+
+  _wakeCursor() {
+    if (!this.dom?.root) return;
+    this.dom.root.classList.remove('immerse-cursor-hidden');
+
+    if (this._cursorTimer) clearTimeout(this._cursorTimer);
+    this._cursorTimer = setTimeout(() => {
+      if (this.isOpen && !this.isDragging) {
+        this.dom.root.classList.add('immerse-cursor-hidden');
+      }
+    }, 2800);
   }
 
   _resetIdleTimer() {
