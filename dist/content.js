@@ -718,6 +718,16 @@
       this.posts = posts;
       this.currentPostIndex = Math.max(0, Math.min(startPostIndex, posts.length - 1));
       this.currentSlideIndex = startSlideIndex;
+      if (this.dom.img) {
+        this.dom.img.src = "";
+        this.dom.img.style.opacity = "0";
+        this.dom.img.style.transform = "translate3d(0, 0, 0)";
+      }
+      if (this.dom.imgPrev) {
+        this.dom.imgPrev.src = "";
+        this.dom.imgPrev.style.display = "none";
+        this.dom.imgPrev.style.opacity = "0";
+      }
       if (!document.body.contains(this.dom.root)) {
         document.body.appendChild(this.dom.root);
       }
@@ -778,6 +788,15 @@
       this.isOpen = false;
       this._completeTransitionImmediately();
       this.resetTransform();
+      if (this.dom?.img) {
+        this.dom.img.src = "";
+        this.dom.img.style.opacity = "0";
+      }
+      if (this.dom?.imgPrev) {
+        this.dom.imgPrev.src = "";
+        this.dom.imgPrev.style.display = "none";
+        this.dom.imgPrev.style.opacity = "0";
+      }
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {
         });
@@ -933,17 +952,6 @@
       const targetPostIndex = this.currentPostIndex;
       const targetSlideIndex = this.currentSlideIndex;
       this._isLoading = true;
-      if (this.dom.img.src && this.dom.img.style.display !== "none" && this.dom.img.style.opacity !== "0") {
-        this.dom.imgPrev.src = this.dom.img.src;
-        this.dom.imgPrev.style.display = "block";
-        this.dom.imgPrev.style.opacity = "0.75";
-        this.dom.imgPrev.style.transform = "translate3d(0, 0, 0) scale(1)";
-        this.dom.imgPrev.style.transition = "opacity 0.2s ease";
-      } else if (this.dom.imgPrev.src) {
-        this.dom.imgPrev.style.display = "block";
-        this.dom.imgPrev.style.opacity = "0.75";
-      }
-      this.dom.img.style.opacity = "0";
       this._spinnerTimeout = setTimeout(() => {
         if (this._isLoading && this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
           this.dom.spinner.classList.add("immerse-spinner-visible");
@@ -973,12 +981,20 @@
           });
         }
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
-        this.dom.img.src = slide.url;
-        const hasPrev = !!(this.dom.imgPrev.src && this.dom.imgPrev.style.display !== "none");
+        const prevUrl = this.dom.img.src && this.dom.img.style.opacity !== "0" && this.dom.img.style.display !== "none" ? this.dom.img.src : null;
+        const hasPrev = !!prevUrl;
         const dir = this._navDirection || 1;
         const isFlat = this.options.transitionStyle === "flat" || this.options.transitionStyle === "slide";
         if (hasPrev) {
           this._isTransitioning = true;
+          this.dom.imgPrev.src = prevUrl;
+          this.dom.imgPrev.style.display = "block";
+          this.dom.imgPrev.style.transition = "none";
+          this.dom.imgPrev.style.transform = "translate3d(0, 0, 0)";
+          this.dom.imgPrev.style.filter = "none";
+          this.dom.imgPrev.style.opacity = "1";
+          this.dom.imgPrev.style.zIndex = "1";
+          this.dom.img.src = slide.url;
           const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
           const slideOffset = dir * viewWidth;
           let incomingStartTransform = "";
@@ -1010,11 +1026,6 @@
           this.dom.img.style.boxShadow = incomingShadow;
           this.dom.img.style.opacity = "1";
           this.dom.img.style.zIndex = "2";
-          this.dom.imgPrev.style.transition = "none";
-          this.dom.imgPrev.style.transform = "translate3d(0, 0, 0) scale(1)";
-          this.dom.imgPrev.style.filter = "none";
-          this.dom.imgPrev.style.opacity = "1";
-          this.dom.imgPrev.style.zIndex = "1";
           void this.dom.img.offsetWidth;
           requestAnimationFrame(() => {
             this.dom.img.style.transition = `transform ${duration} ${easing}`;
@@ -1036,6 +1047,7 @@
             }
           }, isFlat ? 470 : 570);
         } else {
+          this.dom.img.src = slide.url;
           this.dom.img.style.transition = "opacity 0.32s var(--immerse-smooth)";
           this.dom.img.style.transform = "translate3d(0, 0, 0)";
           this.dom.img.style.boxShadow = "none";

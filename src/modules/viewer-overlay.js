@@ -293,6 +293,18 @@ export class ViewerOverlay {
     this.currentPostIndex = Math.max(0, Math.min(startPostIndex, posts.length - 1));
     this.currentSlideIndex = startSlideIndex;
 
+    // Reset image layers so opening starts fresh without transitioning from a prior session
+    if (this.dom.img) {
+      this.dom.img.src = '';
+      this.dom.img.style.opacity = '0';
+      this.dom.img.style.transform = 'translate3d(0, 0, 0)';
+    }
+    if (this.dom.imgPrev) {
+      this.dom.imgPrev.src = '';
+      this.dom.imgPrev.style.display = 'none';
+      this.dom.imgPrev.style.opacity = '0';
+    }
+
     if (!document.body.contains(this.dom.root)) {
       document.body.appendChild(this.dom.root);
     }
@@ -368,6 +380,16 @@ export class ViewerOverlay {
     this.isOpen = false;
     this._completeTransitionImmediately();
     this.resetTransform();
+
+    if (this.dom?.img) {
+      this.dom.img.src = '';
+      this.dom.img.style.opacity = '0';
+    }
+    if (this.dom?.imgPrev) {
+      this.dom.imgPrev.src = '';
+      this.dom.imgPrev.style.display = 'none';
+      this.dom.imgPrev.style.opacity = '0';
+    }
 
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -556,21 +578,6 @@ export class ViewerOverlay {
     const targetSlideIndex = this.currentSlideIndex;
     this._isLoading = true;
 
-    // Buffer previous image to eliminate black blinks and provide seamless transitions
-    if (this.dom.img.src && this.dom.img.style.display !== 'none' && this.dom.img.style.opacity !== '0') {
-      this.dom.imgPrev.src = this.dom.img.src;
-      this.dom.imgPrev.style.display = 'block';
-      this.dom.imgPrev.style.opacity = '0.75'; // Softly dim previous image to indicate incoming load
-      this.dom.imgPrev.style.transform = 'translate3d(0, 0, 0) scale(1)';
-      this.dom.imgPrev.style.transition = 'opacity 0.2s ease';
-    } else if (this.dom.imgPrev.src) {
-      this.dom.imgPrev.style.display = 'block';
-      this.dom.imgPrev.style.opacity = '0.75';
-    }
-
-    // Hide incoming layer until decoded (prevImg remains visible underneath)
-    this.dom.img.style.opacity = '0';
-
     // Show loading spinner quickly if image is not already in memory cache (80ms threshold)
     this._spinnerTimeout = setTimeout(() => {
       if (this._isLoading && this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
@@ -608,15 +615,29 @@ export class ViewerOverlay {
 
       if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
 
-      // Assign decoded asset to current image element
-      this.dom.img.src = slide.url;
-
-      const hasPrev = !!(this.dom.imgPrev.src && this.dom.imgPrev.style.display !== 'none');
+      // Identify currently visible image to smoothly transition from
+      const prevUrl = (this.dom.img.src && this.dom.img.style.opacity !== '0' && this.dom.img.style.display !== 'none')
+        ? this.dom.img.src
+        : null;
+      const hasPrev = !!prevUrl;
       const dir = this._navDirection || 1;
       const isFlat = this.options.transitionStyle === 'flat' || this.options.transitionStyle === 'slide';
 
       if (hasPrev) {
         this._isTransitioning = true;
+
+        // Clone current image state onto previous layer at exact same geometry before updating current
+        this.dom.imgPrev.src = prevUrl;
+        this.dom.imgPrev.style.display = 'block';
+        this.dom.imgPrev.style.transition = 'none';
+        this.dom.imgPrev.style.transform = 'translate3d(0, 0, 0)';
+        this.dom.imgPrev.style.filter = 'none';
+        this.dom.imgPrev.style.opacity = '1';
+        this.dom.imgPrev.style.zIndex = '1';
+
+        // Assign newly decoded asset to current image element
+        this.dom.img.src = slide.url;
+
         const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
         const slideOffset = dir * viewWidth;
 
@@ -660,12 +681,6 @@ export class ViewerOverlay {
         this.dom.img.style.opacity = '1';
         this.dom.img.style.zIndex = '2';
 
-        this.dom.imgPrev.style.transition = 'none';
-        this.dom.imgPrev.style.transform = 'translate3d(0, 0, 0) scale(1)';
-        this.dom.imgPrev.style.filter = 'none';
-        this.dom.imgPrev.style.opacity = '1';
-        this.dom.imgPrev.style.zIndex = '1';
-
         // Force reflow
         void this.dom.img.offsetWidth;
 
@@ -694,7 +709,8 @@ export class ViewerOverlay {
           }
         }, isFlat ? 470 : 570);
       } else {
-        // Initial load: fade in center
+        // Initial load: assign asset and fade in center
+        this.dom.img.src = slide.url;
         this.dom.img.style.transition = 'opacity 0.32s var(--immerse-smooth)';
         this.dom.img.style.transform = 'translate3d(0, 0, 0)';
         this.dom.img.style.boxShadow = 'none';
