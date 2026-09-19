@@ -174,6 +174,7 @@
       this.minScale = 0.5;
       this.maxScale = 6;
       this._idleTimer = null;
+      this._lastNavTime = 0;
       this.dom = null;
       this._handleKeyDown = this._handleKeyDown.bind(this);
       this._handleWheel = this._handleWheel.bind(this);
@@ -240,19 +241,31 @@
         className: "immerse-nav-btn immerse-nav-prev",
         innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
         attributes: { title: "Previous Post (Left Arrow)", "aria-label": "Previous Post" },
-        events: { click: (e) => {
-          e.stopPropagation();
-          this.prevPost();
-        } }
+        events: {
+          click: (e) => {
+            e.stopPropagation();
+            this.prevPost();
+          },
+          dblclick: (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }
+        }
       });
       const nextPostBtn = createElement("button", {
         className: "immerse-nav-btn immerse-nav-next",
         innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
         attributes: { title: "Next Post (Right Arrow)", "aria-label": "Next Post" },
-        events: { click: (e) => {
-          e.stopPropagation();
-          this.nextPost();
-        } }
+        events: {
+          click: (e) => {
+            e.stopPropagation();
+            this.nextPost();
+          },
+          dblclick: (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }
+        }
       });
       const imgWrapper = createElement("div", { className: "immerse-image-wrapper" });
       const img = createElement("img", {
@@ -277,20 +290,32 @@
         className: "immerse-carousel-btn",
         innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
         attributes: { title: "Previous Slide (Up Arrow)", "aria-label": "Previous Slide" },
-        events: { click: (e) => {
-          e.stopPropagation();
-          this.prevSlide();
-        } }
+        events: {
+          click: (e) => {
+            e.stopPropagation();
+            this.prevSlide();
+          },
+          dblclick: (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }
+        }
       });
       const dotsContainer = createElement("div", { className: "immerse-dots" });
       const nextSlideBtn = createElement("button", {
         className: "immerse-carousel-btn",
         innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
         attributes: { title: "Next Slide (Down Arrow)", "aria-label": "Next Slide" },
-        events: { click: (e) => {
-          e.stopPropagation();
-          this.nextSlide();
-        } }
+        events: {
+          click: (e) => {
+            e.stopPropagation();
+            this.nextSlide();
+          },
+          dblclick: (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }
+        }
       });
       const carouselLabel = createElement("span", {
         className: "immerse-carousel-label",
@@ -417,6 +442,7 @@
       const targetSlideIndex = this.currentSlideIndex;
       tempImg.onload = () => {
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
+        this.resetTransform();
         this.dom.img.src = slide.url;
         this.dom.img.style.opacity = "1";
         this.dom.spinner.style.display = "none";
@@ -481,6 +507,8 @@
     }
     /* ---------------- Primary Navigation: Grid Posts ---------------- */
     nextPost() {
+      this._lastNavTime = Date.now();
+      this.resetTransform();
       if (this.currentPostIndex < this.posts.length - 1) {
         this.goToPost(this.currentPostIndex + 1, 0);
       } else if (this.onLoadMore) {
@@ -490,11 +518,15 @@
       }
     }
     prevPost() {
+      this._lastNavTime = Date.now();
+      this.resetTransform();
       if (this.currentPostIndex > 0) {
         this.goToPost(this.currentPostIndex - 1, 0);
       }
     }
     goToPost(postIndex, slideIndex = 0) {
+      this._lastNavTime = Date.now();
+      this.resetTransform();
       this.currentPostIndex = postIndex;
       this.currentSlideIndex = slideIndex;
       this.loadCurrent();
@@ -502,17 +534,23 @@
     }
     /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
     nextSlide() {
+      this._lastNavTime = Date.now();
+      this.resetTransform();
       const post = this.posts[this.currentPostIndex];
       if (post && this.currentSlideIndex < post.slides.length - 1) {
         this.goToSlide(this.currentSlideIndex + 1);
       }
     }
     prevSlide() {
+      this._lastNavTime = Date.now();
+      this.resetTransform();
       if (this.currentSlideIndex > 0) {
         this.goToSlide(this.currentSlideIndex - 1);
       }
     }
     goToSlide(slideIndex) {
+      this._lastNavTime = Date.now();
+      this.resetTransform();
       this.currentSlideIndex = slideIndex;
       this.loadCurrent();
       this._resetIdleTimer();
@@ -582,6 +620,9 @@
     }
     _handleDblClick(e) {
       if (!this.isOpen) return;
+      const isImageTarget = e.target === this.dom?.shield || e.target === this.dom?.img || e.target === this.dom?.imgWrapper;
+      if (!isImageTarget) return;
+      if (Date.now() - this._lastNavTime < 350) return;
       e.preventDefault();
       this._resetIdleTimer();
       if (this.scale > 1.1) {

@@ -29,8 +29,9 @@ export class ViewerOverlay {
     this.minScale = 0.5;
     this.maxScale = 6;
 
-    // Idle auto-hide timer
+    // Idle auto-hide timer & navigation debounce
     this._idleTimer = null;
+    this._lastNavTime = 0;
     this.dom = null;
 
     this._handleKeyDown = this._handleKeyDown.bind(this);
@@ -122,14 +123,20 @@ export class ViewerOverlay {
       className: 'immerse-nav-btn immerse-nav-prev',
       innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
       attributes: { title: 'Previous Post (Left Arrow)', 'aria-label': 'Previous Post' },
-      events: { click: (e) => { e.stopPropagation(); this.prevPost(); } }
+      events: {
+        click: (e) => { e.stopPropagation(); this.prevPost(); },
+        dblclick: (e) => { e.stopPropagation(); e.preventDefault(); }
+      }
     });
 
     const nextPostBtn = createElement('button', {
       className: 'immerse-nav-btn immerse-nav-next',
       innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
       attributes: { title: 'Next Post (Right Arrow)', 'aria-label': 'Next Post' },
-      events: { click: (e) => { e.stopPropagation(); this.nextPost(); } }
+      events: {
+        click: (e) => { e.stopPropagation(); this.nextPost(); },
+        dblclick: (e) => { e.stopPropagation(); e.preventDefault(); }
+      }
     });
 
     // Image container & protected element
@@ -162,7 +169,10 @@ export class ViewerOverlay {
       className: 'immerse-carousel-btn',
       innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
       attributes: { title: 'Previous Slide (Up Arrow)', 'aria-label': 'Previous Slide' },
-      events: { click: (e) => { e.stopPropagation(); this.prevSlide(); } }
+      events: {
+        click: (e) => { e.stopPropagation(); this.prevSlide(); },
+        dblclick: (e) => { e.stopPropagation(); e.preventDefault(); }
+      }
     });
 
     const dotsContainer = createElement('div', { className: 'immerse-dots' });
@@ -171,7 +181,10 @@ export class ViewerOverlay {
       className: 'immerse-carousel-btn',
       innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
       attributes: { title: 'Next Slide (Down Arrow)', 'aria-label': 'Next Slide' },
-      events: { click: (e) => { e.stopPropagation(); this.nextSlide(); } }
+      events: {
+        click: (e) => { e.stopPropagation(); this.nextSlide(); },
+        dblclick: (e) => { e.stopPropagation(); e.preventDefault(); }
+      }
     });
 
     const carouselLabel = createElement('span', {
@@ -326,6 +339,7 @@ export class ViewerOverlay {
 
     tempImg.onload = () => {
       if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
+      this.resetTransform();
       this.dom.img.src = slide.url;
       this.dom.img.style.opacity = '1';
       this.dom.spinner.style.display = 'none';
@@ -408,6 +422,8 @@ export class ViewerOverlay {
   /* ---------------- Primary Navigation: Grid Posts ---------------- */
 
   nextPost() {
+    this._lastNavTime = Date.now();
+    this.resetTransform();
     if (this.currentPostIndex < this.posts.length - 1) {
       this.goToPost(this.currentPostIndex + 1, 0);
     } else if (this.onLoadMore) {
@@ -418,12 +434,16 @@ export class ViewerOverlay {
   }
 
   prevPost() {
+    this._lastNavTime = Date.now();
+    this.resetTransform();
     if (this.currentPostIndex > 0) {
       this.goToPost(this.currentPostIndex - 1, 0);
     }
   }
 
   goToPost(postIndex, slideIndex = 0) {
+    this._lastNavTime = Date.now();
+    this.resetTransform();
     this.currentPostIndex = postIndex;
     this.currentSlideIndex = slideIndex;
     this.loadCurrent();
@@ -433,6 +453,8 @@ export class ViewerOverlay {
   /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
 
   nextSlide() {
+    this._lastNavTime = Date.now();
+    this.resetTransform();
     const post = this.posts[this.currentPostIndex];
     if (post && this.currentSlideIndex < post.slides.length - 1) {
       this.goToSlide(this.currentSlideIndex + 1);
@@ -440,12 +462,16 @@ export class ViewerOverlay {
   }
 
   prevSlide() {
+    this._lastNavTime = Date.now();
+    this.resetTransform();
     if (this.currentSlideIndex > 0) {
       this.goToSlide(this.currentSlideIndex - 1);
     }
   }
 
   goToSlide(slideIndex) {
+    this._lastNavTime = Date.now();
+    this.resetTransform();
     this.currentSlideIndex = slideIndex;
     this.loadCurrent();
     this._resetIdleTimer();
@@ -533,6 +559,16 @@ export class ViewerOverlay {
 
   _handleDblClick(e) {
     if (!this.isOpen) return;
+
+    // Only allow double-click to zoom directly on the image shield or image wrapper
+    const isImageTarget = e.target === this.dom?.shield ||
+                          e.target === this.dom?.img ||
+                          e.target === this.dom?.imgWrapper;
+    if (!isImageTarget) return;
+
+    // Reject accidental double-clicks caused by rapid navigation clicks/keys
+    if (Date.now() - this._lastNavTime < 350) return;
+
     e.preventDefault();
     this._resetIdleTimer();
 
