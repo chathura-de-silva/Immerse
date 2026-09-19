@@ -248,19 +248,13 @@
         attributes: { title: "Toggle Fullscreen (F)", "aria-label": "Toggle Fullscreen" },
         events: { click: () => this.toggleNativeFullscreen() }
       });
-      const downloadBtn = createElement("button", {
-        className: "immerse-btn",
-        innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-        attributes: { title: "Download highest-resolution image (D)", "aria-label": "Download" },
-        events: { click: () => this.downloadCurrent() }
-      });
       const closeBtn = createElement("button", {
         className: "immerse-btn immerse-btn-close",
         innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
         attributes: { title: "Close (Esc)", "aria-label": "Close" },
         events: { click: () => this.close() }
       });
-      controls.append(zoomResetBtn, fullscreenBtn, downloadBtn, closeBtn);
+      controls.append(zoomResetBtn, fullscreenBtn, closeBtn);
       header.append(badge, counter, controls);
       const stage = createElement("div", {
         className: "immerse-stage",
@@ -291,15 +285,26 @@
       const imgWrapper = createElement("div", { className: "immerse-image-wrapper" });
       const img = createElement("img", {
         className: "immerse-image",
-        attributes: { draggable: "false" }
+        attributes: { draggable: "false" },
+        style: { pointerEvents: "none" }
+      });
+      const shield = createElement("div", {
+        className: "immerse-shield",
+        attributes: { "aria-hidden": "true" }
       });
       const spinner = createElement("div", {
         className: "immerse-spinner",
         innerHTML: '<div class="immerse-spinner-ring"></div>'
       });
-      imgWrapper.append(img, spinner);
+      imgWrapper.append(img, shield, spinner);
       stage.append(prevBtn, imgWrapper, nextBtn);
       root.append(backdrop, header, stage);
+      root.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      root.addEventListener("dragstart", (e) => e.preventDefault());
+      root.addEventListener("selectstart", (e) => e.preventDefault());
       this.dom = {
         root,
         backdrop,
@@ -309,13 +314,13 @@
         counter,
         zoomResetBtn,
         fullscreenBtn,
-        downloadBtn,
         closeBtn,
         stage,
         prevBtn,
         nextBtn,
         imgWrapper,
         img,
+        shield,
         spinner
       };
       document.addEventListener("mousemove", this._handleMouseMove);
@@ -514,6 +519,11 @@
     }
     _handleKeyDown(e) {
       if (!this.isOpen) return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S" || e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       switch (e.key) {
         case "Escape":
           e.preventDefault();
@@ -532,11 +542,6 @@
         case "F":
           e.preventDefault();
           this.toggleNativeFullscreen();
-          break;
-        case "d":
-        case "D":
-          e.preventDefault();
-          this.downloadCurrent();
           break;
         case "0":
           e.preventDefault();
@@ -568,17 +573,6 @@
         document.exitFullscreen().catch(() => {
         });
       }
-    }
-    downloadCurrent() {
-      const item = this.items[this.currentIndex];
-      if (!item?.url) return;
-      const link = document.createElement("a");
-      link.href = item.url;
-      link.target = "_blank";
-      link.download = `instagram-highres-${Date.now()}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
     }
   };
 

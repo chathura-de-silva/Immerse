@@ -14,7 +14,7 @@ A lightweight, non-intrusive browser extension (Manifest V3) that simulates larg
   - **Double Click**: Quick toggle between 100% fit and 2.5× zoom.
   - **Multi-Photo Carousels**: Seamless navigation through all photos of a carousel post with prev/next buttons or keyboard arrow keys.
   - **Resolution Badge**: Live readout of the loaded image's actual pixel dimensions (e.g. `1080 × 1350 • Highest Quality`).
-  - **Direct Download**: One-click download button (`D`) to save the original high-resolution JPEG directly.
+  - **Copyright Protection & Anti-Download Shielding**: Actively respects creator copyrights by preventing right-click "Save As", disabling drag-and-drop extraction, blocking save keyboard shortcuts (Ctrl+S / Cmd+S), and shielding images behind a non-interactive layer.
   - **True Fullscreen**: Toggle native browser fullscreen (`F`).
 - **Customizable Settings Popup**: Toggle features, select trigger behavior (Button + Click, Button Only, or Click Only), and adjust preferences.
 
@@ -26,7 +26,6 @@ A lightweight, non-intrusive browser extension (Manifest V3) that simulates larg
 | --- | --- |
 | `Esc` | Close fullscreen viewer |
 | `F` | Toggle true fullscreen mode |
-| `D` | Download current high-resolution image |
 | `←` / `→` | Previous / Next carousel photo |
 | `0` | Reset zoom and pan |
 | `+` / `-` | Zoom in / Zoom out |

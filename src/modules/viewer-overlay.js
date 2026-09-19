@@ -87,14 +87,6 @@ export class ViewerOverlay {
       events: { click: () => this.toggleNativeFullscreen() }
     });
 
-    // Download button
-    const downloadBtn = createElement('button', {
-      className: 'immerse-btn',
-      innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-      attributes: { title: 'Download highest-resolution image (D)', 'aria-label': 'Download' },
-      events: { click: () => this.downloadCurrent() }
-    });
-
     // Close button
     const closeBtn = createElement('button', {
       className: 'immerse-btn immerse-btn-close',
@@ -103,7 +95,7 @@ export class ViewerOverlay {
       events: { click: () => this.close() }
     });
 
-    controls.append(zoomResetBtn, fullscreenBtn, downloadBtn, closeBtn);
+    controls.append(zoomResetBtn, fullscreenBtn, closeBtn);
     header.append(badge, counter, controls);
 
     // Stage area
@@ -131,11 +123,18 @@ export class ViewerOverlay {
       events: { click: (e) => { e.stopPropagation(); this.next(); } }
     });
 
-    // Image container & element
+    // Image container & element (protected with anti-download shield)
     const imgWrapper = createElement('div', { className: 'immerse-image-wrapper' });
     const img = createElement('img', {
       className: 'immerse-image',
-      attributes: { draggable: 'false' }
+      attributes: { draggable: 'false' },
+      style: { pointerEvents: 'none' }
+    });
+
+    // Transparent copyright shield preventing direct click/save on raw image
+    const shield = createElement('div', {
+      className: 'immerse-shield',
+      attributes: { 'aria-hidden': 'true' }
     });
 
     // Spinner
@@ -144,9 +143,17 @@ export class ViewerOverlay {
       innerHTML: '<div class="immerse-spinner-ring"></div>'
     });
 
-    imgWrapper.append(img, spinner);
+    imgWrapper.append(img, shield, spinner);
     stage.append(prevBtn, imgWrapper, nextBtn);
     root.append(backdrop, header, stage);
+
+    // Active anti-download protection: block context menu and drag operations
+    root.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    root.addEventListener('dragstart', (e) => e.preventDefault());
+    root.addEventListener('selectstart', (e) => e.preventDefault());
 
     this.dom = {
       root,
@@ -157,13 +164,13 @@ export class ViewerOverlay {
       counter,
       zoomResetBtn,
       fullscreenBtn,
-      downloadBtn,
       closeBtn,
       stage,
       prevBtn,
       nextBtn,
       imgWrapper,
       img,
+      shield,
       spinner
     };
 
@@ -416,6 +423,13 @@ export class ViewerOverlay {
   _handleKeyDown(e) {
     if (!this.isOpen) return;
 
+    // Actively block save (Ctrl+S / Cmd+S) and copy (Ctrl+C / Cmd+C) keyboard attempts
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'c' || e.key === 'C')) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     switch (e.key) {
       case 'Escape':
         e.preventDefault();
@@ -434,11 +448,6 @@ export class ViewerOverlay {
       case 'F':
         e.preventDefault();
         this.toggleNativeFullscreen();
-        break;
-      case 'd':
-      case 'D':
-        e.preventDefault();
-        this.downloadCurrent();
         break;
       case '0':
         e.preventDefault();
@@ -466,18 +475,5 @@ export class ViewerOverlay {
     } else {
       document.exitFullscreen().catch(() => {});
     }
-  }
-
-  downloadCurrent() {
-    const item = this.items[this.currentIndex];
-    if (!item?.url) return;
-
-    const link = document.createElement('a');
-    link.href = item.url;
-    link.target = '_blank';
-    link.download = `instagram-highres-${Date.now()}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   }
 }
