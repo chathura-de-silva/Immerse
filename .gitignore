@@ -19,7 +19,6 @@ yarn-debug.log*
 yarn-error.log*
 
 # Builds and packaging
-dist/
 build/
 *.zip
 *.crx

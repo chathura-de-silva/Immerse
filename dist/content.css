@@ -1,0 +1,314 @@
+/* Immerse - Combined Content Styles */
+
+/* --- overlay.css --- */
+/* ==========================================================================
+   Immerse - Fullscreen Lightbox Overlay Styles
+   ========================================================================== */
+
+:root {
+  --immerse-bg-backdrop: rgba(10, 10, 12, 0.92);
+  --immerse-glass-bg: rgba(28, 28, 32, 0.75);
+  --immerse-glass-border: rgba(255, 255, 255, 0.12);
+  --immerse-glass-hover: rgba(45, 45, 52, 0.9);
+  --immerse-text-primary: #ffffff;
+  --immerse-text-secondary: rgba(255, 255, 255, 0.7);
+  --immerse-accent: #0095f6;
+  --immerse-badge-bg: rgba(0, 149, 246, 0.18);
+  --immerse-badge-text: #70c4ff;
+  --immerse-badge-border: rgba(112, 196, 255, 0.35);
+  --immerse-transition-timing: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Root overlay container */
+.immerse-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s var(--immerse-transition-timing);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.immerse-overlay-root.immerse-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Backdrop */
+.immerse-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: var(--immerse-bg-backdrop);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+}
+
+/* Header bar */
+.immerse-header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+}
+
+/* Resolution Badge */
+.immerse-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--immerse-badge-bg);
+  border: 1px solid var(--immerse-badge-border);
+  border-radius: 999px;
+  color: var(--immerse-badge-text);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  backdrop-filter: blur(10px);
+}
+
+.immerse-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #2ed573;
+  box-shadow: 0 0 8px #2ed573;
+}
+
+/* Counter */
+.immerse-counter {
+  color: var(--immerse-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  background: var(--immerse-glass-bg);
+  border: 1px solid var(--immerse-glass-border);
+  padding: 6px 16px;
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+}
+
+/* Controls */
+.immerse-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.immerse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  min-width: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--immerse-glass-border);
+  background: var(--immerse-glass-bg);
+  color: var(--immerse-text-primary);
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease-out;
+  backdrop-filter: blur(12px);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.immerse-btn:hover {
+  background: var(--immerse-glass-hover);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.immerse-btn:active {
+  transform: translateY(1px);
+}
+
+.immerse-btn-close:hover {
+  background: rgba(255, 71, 87, 0.2);
+  border-color: rgba(255, 71, 87, 0.4);
+  color: #ff4757;
+}
+
+/* Stage Viewport */
+.immerse-stage {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: default;
+}
+
+.immerse-stage.immerse-can-pan {
+  cursor: grab;
+}
+
+.immerse-stage.immerse-is-panning {
+  cursor: grabbing;
+}
+
+/* Image Wrapper */
+.immerse-image-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 24px 64px;
+  box-sizing: border-box;
+}
+
+.immerse-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none;
+}
+
+/* Navigation buttons (Prev / Next) */
+.immerse-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 15;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--immerse-glass-bg);
+  border: 1px solid var(--immerse-glass-border);
+  color: var(--immerse-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s var(--immerse-transition-timing);
+  backdrop-filter: blur(14px);
+  outline: none;
+}
+
+.immerse-nav-prev { left: 24px; }
+.immerse-nav-next { right: 24px; }
+
+.immerse-nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+  transform: translateY(-50%) scale(1.08);
+}
+
+.immerse-nav-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+/* Spinner */
+.immerse-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.immerse-spinner-ring {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--immerse-accent);
+  border-radius: 50%;
+  animation: immerse-spin 0.8s linear infinite;
+}
+
+@keyframes immerse-spin {
+  to { transform: rotate(360deg); }
+}
+
+
+/* --- hover-button.css --- */
+/* ==========================================================================
+   Immerse - Hover Button Styles
+   ========================================================================== */
+
+.immerse-hover-btn-container {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 50;
+  pointer-events: auto;
+}
+
+.immerse-hover-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 20px;
+  background: rgba(18, 18, 22, 0.65);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.95);
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.15s ease,
+              border-color 0.15s ease;
+  user-select: none;
+  outline: none;
+}
+
+/* Show button on hover of parent or container */
+:hover > .immerse-hover-btn-container > .immerse-hover-btn,
+.immerse-hover-btn-container:hover > .immerse-hover-btn,
+.immerse-hover-btn.immerse-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.immerse-hover-btn:hover {
+  background: rgba(30, 30, 38, 0.9);
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.immerse-hover-btn:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.immerse-hover-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: #ffffff;
+  stroke-width: 2;
+  flex-shrink: 0;
+}
+
+.immerse-hover-btn span {
+  line-height: 1;
+  color: #f0f0f5;
+}
+

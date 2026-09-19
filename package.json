@@ -1,0 +1,24 @@
+{
+  "name": "immerse-instagram-hd",
+  "version": "1.0.0",
+  "description": "High-resolution fullscreen viewer and simulated large-screen overlay for Instagram",
+  "main": "src/content.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "icons": "node scripts/generate-icons.js",
+    "build": "node scripts/build.js"
+  },
+  "keywords": [
+    "instagram",
+    "chrome-extension",
+    "high-resolution",
+    "fullscreen",
+    "lightbox"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
