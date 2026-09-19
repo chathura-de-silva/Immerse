@@ -7,7 +7,7 @@
     showResolutionBadge: false,
     wheelZoom: true,
     transitionStyle: "parallax",
-    // 'parallax' | 'slide'
+    // 'parallax' | 'flat'
     autoMaxRes: true
   });
   var SettingsStore = class {
@@ -976,7 +976,7 @@
         this.dom.img.src = slide.url;
         const hasPrev = !!(this.dom.imgPrev.src && this.dom.imgPrev.style.display !== "none");
         const dir = this._navDirection || 1;
-        const isSlide = this.options.transitionStyle === "slide";
+        const isFlat = this.options.transitionStyle === "flat" || this.options.transitionStyle === "slide";
         if (hasPrev) {
           this._isTransitioning = true;
           const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
@@ -988,22 +988,22 @@
           let incomingShadow = "none";
           let easing = "";
           let duration = "";
-          if (isSlide) {
+          if (isFlat) {
             incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
             outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0)`;
             outgoingEndOpacity = "1";
             outgoingFilter = "none";
             incomingShadow = "none";
-            easing = "cubic-bezier(0.2, 0, 0, 1)";
-            duration = "0.34s";
+            easing = "cubic-bezier(0.22, 1, 0.36, 1)";
+            duration = "0.44s";
           } else {
             incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
-            outgoingEndTransform = `translate3d(${-dir * Math.round(viewWidth * 0.28)}px, 0, 0) scale(0.84)`;
+            outgoingEndTransform = `translate3d(${-dir * Math.round(viewWidth * 0.14)}px, 0, 0) scale(0.70)`;
             outgoingEndOpacity = "0";
-            outgoingFilter = "brightness(0.65)";
-            incomingShadow = dir > 0 ? "-24px 0 60px rgba(0, 0, 0, 0.75)" : "24px 0 60px rgba(0, 0, 0, 0.75)";
-            easing = "cubic-bezier(0.16, 1, 0.3, 1)";
-            duration = "0.40s";
+            outgoingFilter = "brightness(0.38) blur(1.5px)";
+            incomingShadow = dir > 0 ? "-36px 0 90px rgba(0, 0, 0, 0.92), -10px 0 28px rgba(0, 0, 0, 0.75)" : "36px 0 90px rgba(0, 0, 0, 0.92), 10px 0 28px rgba(0, 0, 0, 0.75)";
+            easing = "cubic-bezier(0.16, 1, 0.28, 1)";
+            duration = "0.54s";
           }
           this.dom.img.style.transition = "none";
           this.dom.img.style.transform = incomingStartTransform;
@@ -1018,7 +1018,7 @@
           void this.dom.img.offsetWidth;
           requestAnimationFrame(() => {
             this.dom.img.style.transition = `transform ${duration} ${easing}`;
-            this.dom.imgPrev.style.transition = isSlide ? `transform ${duration} ${easing}` : `transform ${duration} ${easing}, opacity ${duration} ${easing}, filter ${duration} ${easing}`;
+            this.dom.imgPrev.style.transition = isFlat ? `transform ${duration} ${easing}` : `transform ${duration} ${easing}, opacity ${duration} ${easing}, filter ${duration} ${easing}`;
             this.dom.img.style.transform = "translate3d(0, 0, 0)";
             this.dom.imgPrev.style.transform = outgoingEndTransform;
             this.dom.imgPrev.style.opacity = outgoingEndOpacity;
@@ -1034,9 +1034,9 @@
               this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
               this._isTransitioning = false;
             }
-          }, isSlide ? 360 : 420);
+          }, isFlat ? 470 : 570);
         } else {
-          this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
+          this.dom.img.style.transition = "opacity 0.32s var(--immerse-smooth)";
           this.dom.img.style.transform = "translate3d(0, 0, 0)";
           this.dom.img.style.boxShadow = "none";
           requestAnimationFrame(() => {

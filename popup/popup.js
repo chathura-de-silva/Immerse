@@ -41,7 +41,9 @@ async function loadSettings() {
     });
 
     dom.transitionRadios.forEach(radio => {
-      radio.checked = (radio.value === settings.transitionStyle);
+      const isSelected = (radio.value === settings.transitionStyle) ||
+                         (radio.value === 'flat' && settings.transitionStyle === 'slide');
+      radio.checked = isSelected;
     });
   } catch (err) {
     console.warn('[Immerse Popup] Failed to load settings:', err);

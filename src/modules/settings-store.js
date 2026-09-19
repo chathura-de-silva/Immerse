@@ -8,7 +8,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   triggerMode: 'both', // 'both' | 'button-only' | 'image-click'
   showResolutionBadge: false,
   wheelZoom: true,
-  transitionStyle: 'parallax', // 'parallax' | 'slide'
+  transitionStyle: 'parallax', // 'parallax' | 'flat'
   autoMaxRes: true
 });
 
