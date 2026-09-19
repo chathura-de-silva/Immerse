@@ -492,7 +492,7 @@ export class ViewerOverlay {
       this.onLoadMore();
     }
 
-    this.resetTransform();
+    this.resetZoomState();
     this._updateHeaderCounter();
     this._updateCarouselControls(post);
 
@@ -505,9 +505,14 @@ export class ViewerOverlay {
     const targetPostIndex = this.currentPostIndex;
     const targetSlideIndex = this.currentSlideIndex;
 
-    // Buffer previous image to eliminate black blinks and provide seamless crossfade
-    if (this.dom.img.src && this.dom.img.style.opacity !== '0') {
+    // Buffer previous image to eliminate black blinks and provide seamless transitions
+    if (this.dom.img.src && this.dom.img.style.display !== 'none' && this.dom.img.style.opacity !== '0') {
       this.dom.imgPrev.src = this.dom.img.src;
+      this.dom.imgPrev.style.display = 'block';
+      this.dom.imgPrev.style.opacity = '1';
+      this.dom.imgPrev.style.transform = 'translate3d(0, 0, 0) scale(1)';
+      this.dom.imgPrev.style.transition = 'none';
+    } else if (this.dom.imgPrev.src) {
       this.dom.imgPrev.style.display = 'block';
       this.dom.imgPrev.style.opacity = '1';
     }
@@ -552,53 +557,55 @@ export class ViewerOverlay {
       if (hasPrev) {
         let incomingStartTransform = '';
         let outgoingEndTransform = '';
-        let incomingStartOpacity = '0';
-        let outgoingEndOpacity = '0';
-        let easing = 'cubic-bezier(0.16, 1, 0.3, 1)';
-        let duration = '0.32s';
+        let outgoingEndOpacity = '1';
+        let easing = '';
+        let duration = '';
 
         if (isSlide) {
-          // Option B: Continuous 100% Horizontal Slide
+          // Option B: Continuous 100% Horizontal Slide (Filmstrip)
           incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
           outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0)`;
-          incomingStartOpacity = '1';
-          outgoingEndOpacity = '0';
+          outgoingEndOpacity = '1';
           easing = 'cubic-bezier(0.2, 0, 0, 1)';
           duration = '0.34s';
         } else {
-          // Option A: Modern Cinematic Parallax Slide
-          incomingStartTransform = `translate3d(${dir * 80}px, 0, 0) scale(1.02)`;
-          outgoingEndTransform = `translate3d(${-dir * 80}px, 0, 0) scale(0.97)`;
-          incomingStartOpacity = '0';
-          outgoingEndOpacity = '0';
+          // Option A: True Depth Parallax Slide
+          // BOTH images are on screen simultaneously throughout the entire slide motion!
+          // Incoming slide glides from 100% edge at full opacity
+          // Outgoing slide recedes into the background at 38% parallax speed with subtle depth scale & dim
+          incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
+          outgoingEndTransform = `translate3d(${-dir * 38}%, 0, 0) scale(0.93)`;
+          outgoingEndOpacity = '0.4';
           easing = 'cubic-bezier(0.16, 1, 0.3, 1)';
-          duration = '0.32s';
+          duration = '0.35s';
         }
 
         // Apply starting states immediately without transition
         this.dom.img.style.transition = 'none';
         this.dom.img.style.transform = incomingStartTransform;
-        this.dom.img.style.opacity = incomingStartOpacity;
+        this.dom.img.style.opacity = '1';
+        this.dom.img.style.zIndex = '2';
+
         this.dom.imgPrev.style.transition = 'none';
         this.dom.imgPrev.style.transform = 'translate3d(0, 0, 0) scale(1)';
         this.dom.imgPrev.style.opacity = '1';
+        this.dom.imgPrev.style.zIndex = '1';
 
         // Force reflow
         void this.dom.img.offsetWidth;
 
         requestAnimationFrame(() => {
-          this.dom.img.style.transition = `transform ${duration} ${easing}, opacity ${duration} ${easing}`;
-          this.dom.imgPrev.style.transition = `transform ${duration} ${easing}, opacity ${duration} ${easing}`;
+          this.dom.img.style.transition = `transform ${duration} ${easing}`;
+          this.dom.imgPrev.style.transition = `transform ${duration} ${easing}, opacity ${duration} ease`;
 
-          this.dom.img.style.transform = 'translate3d(0, 0, 0) scale(1)';
-          this.dom.img.style.opacity = '1';
+          this.dom.img.style.transform = 'translate3d(0, 0, 0)';
           this.dom.imgPrev.style.transform = outgoingEndTransform;
           this.dom.imgPrev.style.opacity = outgoingEndOpacity;
         });
       } else {
         // Initial load: fade in center
         this.dom.img.style.transition = 'opacity 0.28s var(--immerse-smooth)';
-        this.dom.img.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        this.dom.img.style.transform = 'translate3d(0, 0, 0)';
         requestAnimationFrame(() => {
           this.dom.img.style.opacity = '1';
         });
@@ -724,7 +731,7 @@ export class ViewerOverlay {
   nextPost() {
     this._lastNavTime = Date.now();
     this._navDirection = 1;
-    this.resetTransform();
+    this.resetZoomState();
     if (this.currentPostIndex < this.posts.length - 1) {
       this.goToPost(this.currentPostIndex + 1, 0);
     } else if (this.onLoadMore) {
@@ -737,7 +744,7 @@ export class ViewerOverlay {
   prevPost() {
     this._lastNavTime = Date.now();
     this._navDirection = -1;
-    this.resetTransform();
+    this.resetZoomState();
     if (this.currentPostIndex > 0) {
       this.goToPost(this.currentPostIndex - 1, 0);
     }
@@ -746,7 +753,7 @@ export class ViewerOverlay {
   goToPost(postIndex, slideIndex = 0) {
     this._lastNavTime = Date.now();
     this._navDirection = postIndex >= this.currentPostIndex ? 1 : -1;
-    this.resetTransform();
+    this.resetZoomState();
     this.currentPostIndex = postIndex;
     this.currentSlideIndex = slideIndex;
     this.loadCurrent();
@@ -757,7 +764,7 @@ export class ViewerOverlay {
   nextSlide() {
     this._lastNavTime = Date.now();
     this._navDirection = 1;
-    this.resetTransform();
+    this.resetZoomState();
     const post = this.posts[this.currentPostIndex];
     if (!post) return;
 
@@ -777,7 +784,7 @@ export class ViewerOverlay {
   prevSlide() {
     this._lastNavTime = Date.now();
     this._navDirection = -1;
-    this.resetTransform();
+    this.resetZoomState();
     if (this.currentSlideIndex > 0) {
       this.goToSlide(this.currentSlideIndex - 1);
     }
@@ -786,7 +793,7 @@ export class ViewerOverlay {
   goToSlide(slideIndex) {
     this._lastNavTime = Date.now();
     this._navDirection = slideIndex >= this.currentSlideIndex ? 1 : -1;
-    this.resetTransform();
+    this.resetZoomState();
     const post = this.posts[this.currentPostIndex];
     if (!post) return;
 
@@ -836,14 +843,21 @@ export class ViewerOverlay {
 
   /* ---------------- Zoom & Pan Transforms ---------------- */
 
-  resetTransform() {
+  resetZoomState() {
     this.scale = 1;
     this.panX = 0;
     this.panY = 0;
-    this._applyTransform(true);
-    if (this.dom?.imgPrev) {
-      this.dom.imgPrev.style.transform = 'translate(0px, 0px) scale(1)';
+    if (this.dom?.zoomResetBtn) {
+      this.dom.zoomResetBtn.textContent = '100%';
     }
+    if (this.dom?.stage) {
+      this.dom.stage.classList.remove('immerse-can-pan', 'immerse-is-panning');
+    }
+  }
+
+  resetTransform() {
+    this.resetZoomState();
+    this._applyTransform(true);
   }
 
   _applyTransform(smooth = false) {
