@@ -232,7 +232,6 @@ export class ViewerOverlay {
     document.addEventListener('mouseup', this._handleMouseUp);
     root.addEventListener('mousemove', this._resetIdleTimer);
     root.addEventListener('pointerdown', this._resetIdleTimer);
-    root.addEventListener('wheel', this._resetIdleTimer, { passive: true });
   }
 
   /**
@@ -508,7 +507,7 @@ export class ViewerOverlay {
   _handleWheel(e) {
     if (!this.isOpen) return;
     e.preventDefault();
-    this._resetIdleTimer();
+    e.stopPropagation();
 
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
     const newScale = Math.max(this.minScale, Math.min(this.maxScale, this.scale * zoomFactor));

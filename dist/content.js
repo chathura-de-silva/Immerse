@@ -364,7 +364,6 @@
       document.addEventListener("mouseup", this._handleMouseUp);
       root.addEventListener("mousemove", this._resetIdleTimer);
       root.addEventListener("pointerdown", this._resetIdleTimer);
-      root.addEventListener("wheel", this._resetIdleTimer, { passive: true });
     }
     /**
      * Opens the lightbox overlay with the complete gallery of posts.
@@ -587,7 +586,7 @@
     _handleWheel(e) {
       if (!this.isOpen) return;
       e.preventDefault();
-      this._resetIdleTimer();
+      e.stopPropagation();
       const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
       const newScale = Math.max(this.minScale, Math.min(this.maxScale, this.scale * zoomFactor));
       if (newScale === this.scale) return;
