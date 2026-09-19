@@ -1,6 +1,6 @@
 /**
  * dom-helpers.js
- * Utility functions for DOM manipulation, element creation, and performance optimizations.
+ * Utility functions for DOM manipulation, element creation, and Instagram post traversal.
  */
 
 /**
@@ -78,7 +78,53 @@ export function rafDebounce(fn) {
 }
 
 /**
- * Traverses up the DOM to locate Instagram's post container element (article or main card).
+ * Strict validator that checks if an image is a genuine post/grid photo,
+ * explicitly rejecting profile avatars, hovercard popups, story rings, and icons.
+ *
+ * @param {HTMLImageElement} img
+ * @returns {boolean}
+ */
+export function isLegitimatePostImage(img) {
+  if (!img || img.tagName !== 'IMG') return false;
+
+  const src = img.currentSrc || img.src || '';
+  if (!src) return false;
+
+  // 1. Must be hosted on Instagram/Meta CDN
+  if (!src.includes('cdninstagram') && !src.includes('fbcdn') && !src.includes('instagram')) {
+    return false;
+  }
+
+  // 2. Reject avatars, story bubbles, and profile pictures
+  const alt = (img.alt || '').toLowerCase();
+  if (alt.includes('profile picture') || alt.includes('avatar') || alt.includes('story')) {
+    return false;
+  }
+
+  // 3. Reject images inside headers, navbars, sidebars, or tooltip/hovercard dialogs
+  if (img.closest('header, nav, aside, div[role="tooltip"], div[role="menu"]')) {
+    return false;
+  }
+
+  // 4. Reject tiny UI icons or avatar thumbnails
+  const w = img.naturalWidth || img.width || 0;
+  const h = img.naturalHeight || img.height || 0;
+  if ((w > 0 && w < 160) || (h > 0 && h < 160)) {
+    return false;
+  }
+
+  // 5. Must reside within a legitimate post link or article
+  const postLink = img.closest('a[href*="/p/"], a[href*="/reel/"], article');
+  if (!postLink) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Traverses up the DOM to locate Instagram's post container element.
+ * Only matches legitimate post links (a[href*="/p/"]) or post articles.
  *
  * @param {HTMLElement} element
  * @returns {HTMLElement|null}
@@ -86,17 +132,15 @@ export function rafDebounce(fn) {
 export function findClosestPost(element) {
   if (!element) return null;
   return (
-    element.closest('article') ||
-    element.closest('div[role="dialog"]') ||
     element.closest('a[href*="/p/"]') ||
     element.closest('a[href*="/reel/"]') ||
-    element.closest('div[role="presentation"]') ||
-    element.parentElement
+    element.closest('article') ||
+    element.closest('div[role="dialog"] a[href*="/p/"]')
   );
 }
 
 /**
- * Finds all candidate image elements within a post or carousel.
+ * Finds all candidate post images within a post container.
  *
  * @param {HTMLElement} postContainer
  * @returns {HTMLImageElement[]}
@@ -104,16 +148,6 @@ export function findClosestPost(element) {
 export function findPostImages(postContainer) {
   if (!postContainer) return [];
 
-  // Instagram wraps images inside div._aagv or role="presentation"
   const imgs = Array.from(postContainer.querySelectorAll('img[src], img[srcset]'));
-
-  // Filter out tiny avatars, icons, badges (under 120px)
-  return imgs.filter(img => {
-    const w = img.naturalWidth || img.width || 0;
-    const h = img.naturalHeight || img.height || 0;
-    const isTiny = (w > 0 && w < 120) || (h > 0 && h < 120);
-    // Ignore profile avatars
-    const isAvatar = img.alt?.includes('profile picture') || img.closest('header') !== null;
-    return !isTiny && !isAvatar;
-  });
+  return imgs.filter(isLegitimatePostImage);
 }

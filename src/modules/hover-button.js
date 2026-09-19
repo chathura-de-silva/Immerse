@@ -1,10 +1,10 @@
 /**
  * hover-button.js
- * Injects modern transparent frosted glass HD buttons over Instagram image posts
+ * Injects modern transparent frosted glass HD buttons exclusively over Instagram post tiles
  * and activates whenever the cursor hovers ANYWHERE on the image tile in the grid or feed.
  */
 
-import { createElement } from '../utils/dom-helpers.js';
+import { createElement, isLegitimatePostImage } from '../utils/dom-helpers.js';
 
 export class HoverButtonManager {
   /**
@@ -23,7 +23,7 @@ export class HoverButtonManager {
 
   /**
    * Centralized delegated hover detection ensuring the button appears
-   * whenever the user hovers ANYWHERE within the image tile (grid item or feed card).
+   * whenever the user hovers anywhere within a legitimate post grid tile or feed card.
    */
   _initDelegatedHover() {
     let hideTimer = null;
@@ -35,11 +35,10 @@ export class HoverButtonManager {
       const target = e.target;
       if (!target) return;
 
-      // Find if cursor is anywhere inside an Instagram post tile
+      // Strictly match post grid links or post articles (never hovercards, avatars, or dialogs)
       const tile = target.closest('a[href*="/p/"]') ||
                    target.closest('a[href*="/reel/"]') ||
-                   target.closest('article') ||
-                   target.closest('div[role="dialog"]');
+                   target.closest('article');
 
       if (tile && this.tileToButtonMap.has(tile)) {
         if (hideTimer) {
@@ -72,7 +71,7 @@ export class HoverButtonManager {
           hideTimer = setTimeout(() => {
             btn.classList.remove('immerse-visible');
             if (this.activeButton === btn) this.activeButton = null;
-          }, 120);
+          }, 100);
         }
       }
     }, { passive: true });
@@ -85,14 +84,13 @@ export class HoverButtonManager {
    * @param {HTMLElement} container
    */
   attach(imgElement, container) {
-    if (!imgElement) return;
+    if (!imgElement || !isLegitimatePostImage(imgElement)) return;
 
-    // Resolve the outermost interactive tile
+    // Resolve the outermost interactive tile (must be a post link or article)
     const tile = imgElement.closest('a[href*="/p/"]') ||
                  imgElement.closest('a[href*="/reel/"]') ||
                  imgElement.closest('article') ||
-                 container ||
-                 imgElement.parentElement;
+                 container;
 
     if (!tile || this.tileToButtonMap.has(tile)) return;
 
@@ -111,8 +109,8 @@ export class HoverButtonManager {
       className: 'immerse-hover-btn',
       attributes: {
         type: 'button',
-        title: 'Open in Fullscreen Ultra-HD (Immerse)',
-        'aria-label': 'Open in Fullscreen Ultra-HD'
+        title: 'View in Fullscreen Ultra-HD (Immerse)',
+        'aria-label': 'View in Fullscreen Ultra-HD'
       },
       innerHTML: `
         <svg viewBox="0 0 24 24" fill="none">

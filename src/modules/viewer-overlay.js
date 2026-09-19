@@ -1,17 +1,23 @@
 /**
  * viewer-overlay.js
- * Intuitive, desktop-style fullscreen photo viewer with liquid-glass design language,
- * seamless grid navigation (arrow keys), pan/zoom, auto-hide controls, and copyright protection.
+ * High-performance fullscreen lightbox overlay with clean separation between
+ * grid post navigation (primary) and carousel slide navigation (secondary),
+ * true infinite feed loading, and zero-fragile design.
  */
 
 import { createElement } from '../utils/dom-helpers.js';
 
 export class ViewerOverlay {
-  constructor(settings = {}) {
-    this.settings = settings;
+  constructor(options = {}) {
+    this.options = options;
+    this.onLoadMore = options.onLoadMore || null;
     this.isOpen = false;
-    this.items = []; // Array of { id, url, width, height, postIndex, slideIndex, totalSlides, isCarousel }
-    this.currentIndex = 0;
+
+    // Posts & Slide state
+    this.posts = []; // Array of { id, tile, slides: [{ url, width, height, element }] }
+    this.currentPostIndex = 0;
+    this.currentSlideIndex = 0;
+    this._waitingForNextPost = false;
 
     // Pan & Zoom state
     this.scale = 1;
@@ -37,7 +43,7 @@ export class ViewerOverlay {
   }
 
   /**
-   * Builds the DOM elements for the overlay with liquid-glass design language.
+   * Builds the DOM elements for the overlay with modern frosted glass styling.
    */
   _ensureDom() {
     if (this.dom) return;
@@ -48,7 +54,7 @@ export class ViewerOverlay {
       attributes: { 'aria-modal': 'true', role: 'dialog' }
     });
 
-    // Backdrop with deep blur
+    // Deep optical backdrop
     const backdrop = createElement('div', {
       className: 'immerse-backdrop',
       events: { click: (e) => {
@@ -65,10 +71,10 @@ export class ViewerOverlay {
       innerHTML: '<span class="immerse-badge-dot"></span><span class="immerse-badge-text">Ultra-HD</span>'
     });
 
-    // Gallery counter pill
+    // Post counter pill (e.g. "Post 3 of 18")
     const counter = createElement('div', {
       className: 'immerse-counter',
-      textContent: '1 / 1'
+      textContent: 'Post 1 of 1'
     });
 
     // Header controls group
@@ -111,19 +117,19 @@ export class ViewerOverlay {
       }
     });
 
-    // Navigation buttons (Previous / Next image in grid)
-    const prevBtn = createElement('button', {
+    // Primary Navigation Buttons: Navigate between POSTS in the grid
+    const prevPostBtn = createElement('button', {
       className: 'immerse-nav-btn immerse-nav-prev',
       innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
-      attributes: { 'aria-label': 'Previous image (Left Arrow)' },
-      events: { click: (e) => { e.stopPropagation(); this.prev(); } }
+      attributes: { title: 'Previous Post (Left Arrow)', 'aria-label': 'Previous Post' },
+      events: { click: (e) => { e.stopPropagation(); this.prevPost(); } }
     });
 
-    const nextBtn = createElement('button', {
+    const nextPostBtn = createElement('button', {
       className: 'immerse-nav-btn immerse-nav-next',
       innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
-      attributes: { 'aria-label': 'Next image (Right Arrow)' },
-      events: { click: (e) => { e.stopPropagation(); this.next(); } }
+      attributes: { title: 'Next Post (Right Arrow)', 'aria-label': 'Next Post' },
+      events: { click: (e) => { e.stopPropagation(); this.nextPost(); } }
     });
 
     // Image container & protected element
@@ -134,20 +140,47 @@ export class ViewerOverlay {
       style: { pointerEvents: 'none' }
     });
 
-    // Protective transparent shield over image container
     const shield = createElement('div', {
       className: 'immerse-shield',
       attributes: { 'aria-hidden': 'true' }
     });
 
-    // Shimmer spinner
     const spinner = createElement('div', {
       className: 'immerse-spinner',
       innerHTML: '<div class="immerse-spinner-ring"></div>'
     });
 
     imgWrapper.append(img, shield, spinner);
-    stage.append(prevBtn, imgWrapper, nextBtn);
+
+    // Secondary Navigation: Carousel Slide Controller (Slides within current post)
+    const carouselCtrl = createElement('div', {
+      className: 'immerse-carousel-controller',
+      style: { display: 'none' }
+    });
+
+    const prevSlideBtn = createElement('button', {
+      className: 'immerse-carousel-btn',
+      innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
+      attributes: { title: 'Previous Slide (Up Arrow)', 'aria-label': 'Previous Slide' },
+      events: { click: (e) => { e.stopPropagation(); this.prevSlide(); } }
+    });
+
+    const dotsContainer = createElement('div', { className: 'immerse-dots' });
+
+    const nextSlideBtn = createElement('button', {
+      className: 'immerse-carousel-btn',
+      innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
+      attributes: { title: 'Next Slide (Down Arrow)', 'aria-label': 'Next Slide' },
+      events: { click: (e) => { e.stopPropagation(); this.nextSlide(); } }
+    });
+
+    const carouselLabel = createElement('span', {
+      className: 'immerse-carousel-label',
+      textContent: 'Slide 1/1'
+    });
+
+    carouselCtrl.append(prevSlideBtn, dotsContainer, carouselLabel, nextSlideBtn);
+    stage.append(prevPostBtn, imgWrapper, nextPostBtn, carouselCtrl);
     root.append(backdrop, header, stage);
 
     // Copyright protection: block context menus, drag-and-drop, and selection
@@ -169,12 +202,17 @@ export class ViewerOverlay {
       fullscreenBtn,
       closeBtn,
       stage,
-      prevBtn,
-      nextBtn,
+      prevPostBtn,
+      nextPostBtn,
       imgWrapper,
       img,
       shield,
-      spinner
+      spinner,
+      carouselCtrl,
+      prevSlideBtn,
+      nextSlideBtn,
+      dotsContainer,
+      carouselLabel
     };
 
     document.addEventListener('mousemove', this._handleMouseMove);
@@ -183,27 +221,24 @@ export class ViewerOverlay {
   }
 
   /**
-   * Opens the lightbox overlay with the complete gallery sequence.
+   * Opens the lightbox overlay with the complete gallery of posts.
    *
-   * @param {Array<Object>} items Array of gallery items
-   * @param {number} [startIndex=0]
+   * @param {Array<Object>} posts Array of post objects
+   * @param {number} [startPostIndex=0]
+   * @param {number} [startSlideIndex=0]
    */
-  open(items, startIndex = 0) {
-    if (!items || items.length === 0) return;
+  open(posts, startPostIndex = 0, startSlideIndex = 0) {
+    if (!posts || posts.length === 0) return;
 
     this._ensureDom();
-    this.items = items;
-    this.currentIndex = Math.max(0, Math.min(startIndex, items.length - 1));
+    this.posts = posts;
+    this.currentPostIndex = Math.max(0, Math.min(startPostIndex, posts.length - 1));
+    this.currentSlideIndex = startSlideIndex;
 
     if (!document.body.contains(this.dom.root)) {
       document.body.appendChild(this.dom.root);
     }
 
-    // Lock background scrolling
-    this._originalBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    // Show root with fade-in animation
     requestAnimationFrame(() => {
       this.dom.root.classList.add('immerse-active');
       this._resetIdleTimer();
@@ -212,11 +247,11 @@ export class ViewerOverlay {
     this.isOpen = true;
     document.addEventListener('keydown', this._handleKeyDown, true);
 
-    this.loadImage(this.currentIndex);
+    this.loadCurrent();
   }
 
   /**
-   * Closes and cleans up the lightbox overlay.
+   * Closes the lightbox overlay.
    */
   close() {
     if (!this.isOpen || !this.dom) return;
@@ -227,10 +262,6 @@ export class ViewerOverlay {
     if (this._idleTimer) {
       clearTimeout(this._idleTimer);
       this._idleTimer = null;
-    }
-
-    if (this._originalBodyOverflow !== undefined) {
-      document.body.style.overflow = this._originalBodyOverflow;
     }
 
     this.isOpen = false;
@@ -248,44 +279,35 @@ export class ViewerOverlay {
   }
 
   /**
-   * Updates the sequence items dynamically if new posts load into the grid.
-   * @param {Array<Object>} newItems
+   * Updates posts dynamically when Instagram loads more items in the background.
+   *
+   * @param {Array<Object>} newPosts
    */
-  updateSequence(newItems) {
-    if (!newItems || newItems.length === 0) return;
-    const oldLength = this.items.length;
-    const currentItem = this.items[this.currentIndex];
-    this.items = newItems;
+  updatePosts(newPosts) {
+    if (!newPosts || newPosts.length === 0) return;
+    const oldLength = this.posts.length;
+    this.posts = newPosts;
 
-    if (currentItem) {
-      const newIdx = this.items.findIndex(it => it.id === currentItem.id || it.url === currentItem.url);
-      if (newIdx !== -1) {
-        this.currentIndex = newIdx;
-      }
-    }
-
-    // Auto-advance if user was waiting at the boundary for new posts
-    if (this._waitingForNextBatch && this.items.length > oldLength) {
-      this._waitingForNextBatch = false;
-      this.loadImage(oldLength);
+    if (this._waitingForNextPost && this.posts.length > oldLength) {
+      this._waitingForNextPost = false;
+      this.goToPost(oldLength, 0);
     } else {
-      this._updateCounter();
+      this._updateHeaderCounter();
     }
   }
 
   /**
-   * Loads the specified image index into the lightbox.
-   *
-   * @param {number} index
+   * Loads the current post and current slide into view.
    */
-  loadImage(index) {
-    if (!this.items[index]) return;
+  loadCurrent() {
+    const post = this.posts[this.currentPostIndex];
+    if (!post || !post.slides || post.slides.length === 0) return;
 
-    this.currentIndex = index;
-    const item = this.items[index];
+    this.currentSlideIndex = Math.max(0, Math.min(this.currentSlideIndex, post.slides.length - 1));
+    const slide = post.slides[this.currentSlideIndex];
 
-    // Proactively trigger background loading when nearing the end of the loaded sequence
-    if (this.currentIndex >= this.items.length - 3 && this.onLoadMore) {
+    // Proactively trigger background loading when approaching the end of loaded posts
+    if (this.currentPostIndex >= this.posts.length - 3 && this.onLoadMore) {
       this.onLoadMore();
     }
 
@@ -293,15 +315,18 @@ export class ViewerOverlay {
     this.dom.spinner.style.display = 'block';
     this.dom.img.style.opacity = '0';
 
-    this._updateCounter();
+    this._updateHeaderCounter();
+    this._updateCarouselControls(post);
 
-    // Set badge to loading state
     this.dom.badgeText.textContent = 'Fetching Ultra-HD...';
 
     const tempImg = new Image();
+    const targetPostIndex = this.currentPostIndex;
+    const targetSlideIndex = this.currentSlideIndex;
+
     tempImg.onload = () => {
-      if (this.currentIndex !== index) return;
-      this.dom.img.src = item.url;
+      if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
+      this.dom.img.src = slide.url;
       this.dom.img.style.opacity = '1';
       this.dom.spinner.style.display = 'none';
 
@@ -309,77 +334,124 @@ export class ViewerOverlay {
       const h = tempImg.naturalHeight;
       this.dom.badgeText.textContent = `${w} × ${h} • Highest Quality`;
 
-      this._preloadAdjacent(index);
+      this._preloadAdjacent();
     };
 
     tempImg.onerror = () => {
-      if (this.currentIndex !== index) return;
+      if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
       this.dom.spinner.style.display = 'none';
       this.dom.badgeText.textContent = 'HD Ready';
-      this.dom.img.src = item.url;
+      this.dom.img.src = slide.url;
       this.dom.img.style.opacity = '1';
     };
 
-    tempImg.src = item.url;
+    tempImg.src = slide.url;
   }
 
-  _updateCounter() {
-    const total = this.items.length;
-    const current = this.currentIndex + 1;
-    const item = this.items[this.currentIndex];
+  _updateHeaderCounter() {
+    const totalPosts = this.posts.length;
+    const currentPostNum = this.currentPostIndex + 1;
 
-    if (total > 1) {
-      this.dom.counter.style.display = 'block';
-      if (item && item.isCarousel && item.totalSlides > 1) {
-        this.dom.counter.textContent = `${current} / ${total} • Slide ${item.slideIndex + 1}/${item.totalSlides}`;
-      } else {
-        this.dom.counter.textContent = `${current} / ${total}`;
-      }
+    this.dom.counter.textContent = `Post ${currentPostNum} of ${totalPosts}`;
+    this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
+    // Keep next button clickable so user can trigger load-more at the end
+    this.dom.nextPostBtn.disabled = false;
+  }
 
-      this.dom.prevBtn.style.display = 'flex';
-      this.dom.nextBtn.style.display = 'flex';
-      this.dom.prevBtn.disabled = this.currentIndex === 0;
-      // Never disable next if we can load more from feed
-      this.dom.nextBtn.disabled = false;
-    } else {
-      this.dom.counter.style.display = 'none';
-      this.dom.prevBtn.style.display = 'none';
-      this.dom.nextBtn.style.display = 'none';
+  _updateCarouselControls(post) {
+    if (!post || post.slides.length <= 1) {
+      this.dom.carouselCtrl.style.display = 'none';
+      return;
+    }
+
+    this.dom.carouselCtrl.style.display = 'flex';
+    const totalSlides = post.slides.length;
+    const currentSlideNum = this.currentSlideIndex + 1;
+
+    this.dom.carouselLabel.textContent = `Slide ${currentSlideNum} of ${totalSlides}`;
+    this.dom.prevSlideBtn.disabled = this.currentSlideIndex === 0;
+    this.dom.nextSlideBtn.disabled = this.currentSlideIndex === totalSlides - 1;
+
+    // Render slide dots
+    this.dom.dotsContainer.innerHTML = '';
+    for (let i = 0; i < totalSlides; i++) {
+      const dot = createElement('div', {
+        className: `immerse-dot ${i === this.currentSlideIndex ? 'immerse-dot-active' : ''}`,
+        attributes: { title: `Go to slide ${i + 1}` },
+        events: {
+          click: (e) => {
+            e.stopPropagation();
+            this.goToSlide(i);
+          }
+        }
+      });
+      this.dom.dotsContainer.appendChild(dot);
     }
   }
 
-  _preloadAdjacent(currentIndex) {
-    [-1, 1, 2].forEach(offset => {
-      const idx = currentIndex + offset;
-      if (this.items[idx]?.url) {
-        const pre = new Image();
-        pre.src = this.items[idx].url;
-      }
-    });
-  }
-
-  next() {
-    // If approaching or at the end of loaded images, trigger background infinite load
-    if (this.currentIndex >= this.items.length - 2 && this.onLoadMore) {
-      this.onLoadMore();
+  _preloadAdjacent() {
+    // Preload next slide of current post if available
+    const post = this.posts[this.currentPostIndex];
+    if (post && post.slides[this.currentSlideIndex + 1]) {
+      const pre = new Image();
+      pre.src = post.slides[this.currentSlideIndex + 1].url;
     }
 
-    if (this.currentIndex < this.items.length - 1) {
-      this.loadImage(this.currentIndex + 1);
-      this._resetIdleTimer();
+    // Preload first slide of next post
+    const nextPost = this.posts[this.currentPostIndex + 1];
+    if (nextPost && nextPost.slides[0]) {
+      const pre = new Image();
+      pre.src = nextPost.slides[0].url;
+    }
+  }
+
+  /* ---------------- Primary Navigation: Grid Posts ---------------- */
+
+  nextPost() {
+    if (this.currentPostIndex < this.posts.length - 1) {
+      this.goToPost(this.currentPostIndex + 1, 0);
     } else if (this.onLoadMore) {
-      this.dom.counter.textContent = 'Loading next batch from feed...';
-      this._waitingForNextBatch = true;
+      this.dom.counter.textContent = 'Loading more posts from feed...';
+      this._waitingForNextPost = true;
       this.onLoadMore();
     }
   }
 
-  prev() {
-    if (this.currentIndex > 0) {
-      this.loadImage(this.currentIndex - 1);
-      this._resetIdleTimer();
+  prevPost() {
+    if (this.currentPostIndex > 0) {
+      this.goToPost(this.currentPostIndex - 1, 0);
     }
   }
+
+  goToPost(postIndex, slideIndex = 0) {
+    this.currentPostIndex = postIndex;
+    this.currentSlideIndex = slideIndex;
+    this.loadCurrent();
+    this._resetIdleTimer();
+  }
+
+  /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
+
+  nextSlide() {
+    const post = this.posts[this.currentPostIndex];
+    if (post && this.currentSlideIndex < post.slides.length - 1) {
+      this.goToSlide(this.currentSlideIndex + 1);
+    }
+  }
+
+  prevSlide() {
+    if (this.currentSlideIndex > 0) {
+      this.goToSlide(this.currentSlideIndex - 1);
+    }
+  }
+
+  goToSlide(slideIndex) {
+    this.currentSlideIndex = slideIndex;
+    this.loadCurrent();
+    this._resetIdleTimer();
+  }
+
+  /* ---------------- Zoom & Pan Transforms ---------------- */
 
   resetTransform() {
     this.scale = 1;
@@ -494,18 +566,33 @@ export class ViewerOverlay {
         e.stopPropagation();
         this.close();
         break;
+
+      // Primary Navigation (Posts in Grid)
       case 'ArrowRight':
       case 'l':
       case 'L':
         e.preventDefault();
-        this.next();
+        this.nextPost();
         break;
       case 'ArrowLeft':
       case 'j':
       case 'J':
         e.preventDefault();
-        this.prev();
+        this.prevPost();
         break;
+
+      // Secondary Navigation (Carousel Slides of Current Post)
+      case 'ArrowDown':
+      case ']':
+        e.preventDefault();
+        this.nextSlide();
+        break;
+      case 'ArrowUp':
+      case '[':
+        e.preventDefault();
+        this.prevSlide();
+        break;
+
       case 'f':
       case 'F':
         e.preventDefault();

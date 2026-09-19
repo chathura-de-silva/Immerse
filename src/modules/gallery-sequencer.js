@@ -1,133 +1,134 @@
 /**
  * gallery-sequencer.js
- * Manages the global sequential order of all media items on the page (feed or grid),
- * enabling desktop-style folder navigation across all posts with arrow keys.
+ * Manages the sequential list of posts in the grid, where each post can contain
+ * one or multiple carousel slides.
  */
 
 import { getHighestResolutionUrl } from '../utils/srcset-parser.js';
-import { findClosestPost, findPostImages } from '../utils/dom-helpers.js';
+import { findClosestPost, findPostImages, isLegitimatePostImage } from '../utils/dom-helpers.js';
 
 export class GallerySequencer {
   constructor() {
-    this.items = []; // Array of { id, img, post, url, width, height, postIndex, slideIndex }
-    this.knownImgSet = new WeakSet();
+    this.posts = []; // Array of { id, postElement, tile, slides: [{ url, width, height, element }] }
     this.listeners = new Set();
   }
 
   /**
-   * Rebuilds and synchronizes the sequence of all discoverable media on the page
-   * sorted in visual reading order (top-to-bottom, left-to-right).
+   * Synchronizes and sorts all legitimate post tiles visible in the DOM
+   * in visual reading order (top-to-bottom, left-to-right).
    *
-   * @param {HTMLElement[]} rootElements
+   * @param {Array<{img: HTMLImageElement, container: HTMLElement}>} mediaEntries
    * @returns {Array<Object>}
    */
   syncSequence(mediaEntries) {
-    if (!mediaEntries || mediaEntries.length === 0) return this.items;
+    if (!mediaEntries || mediaEntries.length === 0) return this.posts;
 
-    // Filter valid visible elements in DOM
-    const validEntries = mediaEntries.filter(entry => entry.img && document.body.contains(entry.img));
+    // Filter valid entries strictly inside post links or articles
+    const validEntries = mediaEntries.filter(entry => {
+      return entry.img && document.body.contains(entry.img) && isLegitimatePostImage(entry.img);
+    });
 
-    // Sort entries by visual DOM position
-    validEntries.sort((a, b) => {
-      const rectA = (a.container || a.img).getBoundingClientRect();
-      const rectB = (b.container || b.img).getBoundingClientRect();
+    // Group images by their unique post container
+    const postMap = new Map();
+
+    for (const entry of validEntries) {
+      const tile = entry.container || findClosestPost(entry.img);
+      if (!tile) continue;
+
+      if (!postMap.has(tile)) {
+        postMap.set(tile, {
+          tile,
+          images: []
+        });
+      }
+      postMap.get(tile).images.push(entry.img);
+    }
+
+    // Sort post tiles by visual position on page
+    const sortedTiles = Array.from(postMap.values()).sort((a, b) => {
+      const rectA = a.tile.getBoundingClientRect();
+      const rectB = b.tile.getBoundingClientRect();
       const topDiff = (rectA.top + window.scrollY) - (rectB.top + window.scrollY);
-      if (Math.abs(topDiff) > 20) {
+      if (Math.abs(topDiff) > 25) {
         return topDiff;
       }
       return (rectA.left + window.scrollX) - (rectB.left + window.scrollX);
     });
 
-    const newSequence = [];
-    const seenUrls = new Set();
+    const newPosts = [];
 
-    validEntries.forEach((entry, postIndex) => {
-      const { img, container } = entry;
-      const post = findClosestPost(container || img);
-      const postImages = post ? findPostImages(post) : [img];
+    sortedTiles.forEach((group, postIndex) => {
+      const { tile } = group;
+      const postImages = findPostImages(tile);
+      const uniqueSlides = [];
+      const seenUrls = new Set();
 
-      if (postImages.length > 1) {
-        // Carousel post: add each slide in order
-        postImages.forEach((slideImg, slideIndex) => {
-          const url = getHighestResolutionUrl(slideImg);
-          if (url && !seenUrls.has(url)) {
-            seenUrls.add(url);
-            newSequence.push({
-              id: `${postIndex}-${slideIndex}-${url.slice(-16)}`,
-              img: slideImg,
-              container: container || post,
-              post,
-              url,
-              width: slideImg.naturalWidth || 1080,
-              height: slideImg.naturalHeight || 1080,
-              postIndex,
-              slideIndex,
-              totalSlides: postImages.length,
-              isCarousel: true
-            });
-          }
-        });
-      } else {
-        // Single post
-        const url = getHighestResolutionUrl(img);
+      for (const imgEl of postImages) {
+        const url = getHighestResolutionUrl(imgEl);
         if (url && !seenUrls.has(url)) {
           seenUrls.add(url);
-          newSequence.push({
-            id: `${postIndex}-0-${url.slice(-16)}`,
-            img,
-            container: container || post,
-            post,
+          uniqueSlides.push({
             url,
-            width: img.naturalWidth || 1080,
-            height: img.naturalHeight || 1080,
-            postIndex,
-            slideIndex: 0,
-            totalSlides: 1,
-            isCarousel: false
+            width: imgEl.naturalWidth || 1080,
+            height: imgEl.naturalHeight || 1080,
+            element: imgEl
           });
         }
       }
+
+      if (uniqueSlides.length > 0) {
+        newPosts.push({
+          id: `post-${postIndex}-${uniqueSlides[0].url.slice(-12)}`,
+          tile,
+          slides: uniqueSlides,
+          isCarousel: uniqueSlides.length > 1
+        });
+      }
     });
 
-    this.items = newSequence;
+    this.posts = newPosts;
     this._notify();
-    return this.items;
+    return this.posts;
   }
 
   /**
-   * Finds the sequential index corresponding to a specific image element or URL.
+   * Finds the post index and slide index for a clicked image.
    *
    * @param {HTMLImageElement} targetImg
-   * @returns {number} Index, or 0 if not found
+   * @returns {{postIndex: number, slideIndex: number}}
    */
-  findIndex(targetImg) {
-    if (!targetImg || this.items.length === 0) return 0;
+  findLocation(targetImg) {
+    if (!targetImg || this.posts.length === 0) {
+      return { postIndex: 0, slideIndex: 0 };
+    }
 
     const targetSrc = targetImg.currentSrc || targetImg.src || '';
-    const index = this.items.findIndex(item => {
-      if (item.img === targetImg) return true;
-      if (targetSrc && item.url.includes(targetSrc)) return true;
-      return false;
-    });
 
-    return index !== -1 ? index : 0;
+    for (let pIdx = 0; pIdx < this.posts.length; pIdx++) {
+      const post = this.posts[pIdx];
+      for (let sIdx = 0; sIdx < post.slides.length; sIdx++) {
+        const slide = post.slides[sIdx];
+        if (slide.element === targetImg || (targetSrc && slide.url.includes(targetSrc))) {
+          return { postIndex: pIdx, slideIndex: sIdx };
+        }
+      }
+    }
+
+    // Fallback: check if targetImg is inside the post's tile
+    const foundTileIdx = this.posts.findIndex(p => p.tile.contains(targetImg));
+    if (foundTileIdx !== -1) {
+      return { postIndex: foundTileIdx, slideIndex: 0 };
+    }
+
+    return { postIndex: 0, slideIndex: 0 };
   }
 
-  /**
-   * Returns item at index.
-   * @param {number} index
-   * @returns {Object|null}
-   */
-  getItem(index) {
-    return this.items[index] || null;
-  }
-
-  /**
-   * Total number of items in sequence.
-   * @returns {number}
-   */
   get length() {
-    return this.items.length;
+    return this.posts.length;
+  }
+
+  getPost(index) {
+    return this.posts[index] || null;
   }
 
   subscribe(listener) {
@@ -138,9 +139,9 @@ export class GallerySequencer {
   _notify() {
     for (const listener of this.listeners) {
       try {
-        listener(this.items);
+        listener(this.posts);
       } catch (e) {
-        console.error('[GallerySequencer] Error in listener:', e);
+        console.error('[GallerySequencer] Listener error:', e);
       }
     }
   }

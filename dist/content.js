@@ -120,29 +120,51 @@
     }
     return el;
   }
+  function isLegitimatePostImage(img) {
+    if (!img || img.tagName !== "IMG") return false;
+    const src = img.currentSrc || img.src || "";
+    if (!src) return false;
+    if (!src.includes("cdninstagram") && !src.includes("fbcdn") && !src.includes("instagram")) {
+      return false;
+    }
+    const alt = (img.alt || "").toLowerCase();
+    if (alt.includes("profile picture") || alt.includes("avatar") || alt.includes("story")) {
+      return false;
+    }
+    if (img.closest('header, nav, aside, div[role="tooltip"], div[role="menu"]')) {
+      return false;
+    }
+    const w = img.naturalWidth || img.width || 0;
+    const h = img.naturalHeight || img.height || 0;
+    if (w > 0 && w < 160 || h > 0 && h < 160) {
+      return false;
+    }
+    const postLink = img.closest('a[href*="/p/"], a[href*="/reel/"], article');
+    if (!postLink) {
+      return false;
+    }
+    return true;
+  }
   function findClosestPost(element) {
     if (!element) return null;
-    return element.closest("article") || element.closest('div[role="dialog"]') || element.closest('a[href*="/p/"]') || element.closest('a[href*="/reel/"]') || element.closest('div[role="presentation"]') || element.parentElement;
+    return element.closest('a[href*="/p/"]') || element.closest('a[href*="/reel/"]') || element.closest("article") || element.closest('div[role="dialog"] a[href*="/p/"]');
   }
   function findPostImages(postContainer) {
     if (!postContainer) return [];
     const imgs = Array.from(postContainer.querySelectorAll("img[src], img[srcset]"));
-    return imgs.filter((img) => {
-      const w = img.naturalWidth || img.width || 0;
-      const h = img.naturalHeight || img.height || 0;
-      const isTiny = w > 0 && w < 120 || h > 0 && h < 120;
-      const isAvatar = img.alt?.includes("profile picture") || img.closest("header") !== null;
-      return !isTiny && !isAvatar;
-    });
+    return imgs.filter(isLegitimatePostImage);
   }
 
   // src/modules/viewer-overlay.js
   var ViewerOverlay = class {
-    constructor(settings = {}) {
-      this.settings = settings;
+    constructor(options = {}) {
+      this.options = options;
+      this.onLoadMore = options.onLoadMore || null;
       this.isOpen = false;
-      this.items = [];
-      this.currentIndex = 0;
+      this.posts = [];
+      this.currentPostIndex = 0;
+      this.currentSlideIndex = 0;
+      this._waitingForNextPost = false;
       this.scale = 1;
       this.panX = 0;
       this.panY = 0;
@@ -162,7 +184,7 @@
       this._resetIdleTimer = this._resetIdleTimer.bind(this);
     }
     /**
-     * Builds the DOM elements for the overlay with liquid-glass design language.
+     * Builds the DOM elements for the overlay with modern frosted glass styling.
      */
     _ensureDom() {
       if (this.dom) return;
@@ -183,7 +205,7 @@
       });
       const counter = createElement("div", {
         className: "immerse-counter",
-        textContent: "1 / 1"
+        textContent: "Post 1 of 1"
       });
       const controls = createElement("div", { className: "immerse-controls" });
       const zoomResetBtn = createElement("button", {
@@ -214,22 +236,22 @@
           dblclick: this._handleDblClick
         }
       });
-      const prevBtn = createElement("button", {
+      const prevPostBtn = createElement("button", {
         className: "immerse-nav-btn immerse-nav-prev",
         innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
-        attributes: { "aria-label": "Previous image (Left Arrow)" },
+        attributes: { title: "Previous Post (Left Arrow)", "aria-label": "Previous Post" },
         events: { click: (e) => {
           e.stopPropagation();
-          this.prev();
+          this.prevPost();
         } }
       });
-      const nextBtn = createElement("button", {
+      const nextPostBtn = createElement("button", {
         className: "immerse-nav-btn immerse-nav-next",
         innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
-        attributes: { "aria-label": "Next image (Right Arrow)" },
+        attributes: { title: "Next Post (Right Arrow)", "aria-label": "Next Post" },
         events: { click: (e) => {
           e.stopPropagation();
-          this.next();
+          this.nextPost();
         } }
       });
       const imgWrapper = createElement("div", { className: "immerse-image-wrapper" });
@@ -247,7 +269,35 @@
         innerHTML: '<div class="immerse-spinner-ring"></div>'
       });
       imgWrapper.append(img, shield, spinner);
-      stage.append(prevBtn, imgWrapper, nextBtn);
+      const carouselCtrl = createElement("div", {
+        className: "immerse-carousel-controller",
+        style: { display: "none" }
+      });
+      const prevSlideBtn = createElement("button", {
+        className: "immerse-carousel-btn",
+        innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
+        attributes: { title: "Previous Slide (Up Arrow)", "aria-label": "Previous Slide" },
+        events: { click: (e) => {
+          e.stopPropagation();
+          this.prevSlide();
+        } }
+      });
+      const dotsContainer = createElement("div", { className: "immerse-dots" });
+      const nextSlideBtn = createElement("button", {
+        className: "immerse-carousel-btn",
+        innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
+        attributes: { title: "Next Slide (Down Arrow)", "aria-label": "Next Slide" },
+        events: { click: (e) => {
+          e.stopPropagation();
+          this.nextSlide();
+        } }
+      });
+      const carouselLabel = createElement("span", {
+        className: "immerse-carousel-label",
+        textContent: "Slide 1/1"
+      });
+      carouselCtrl.append(prevSlideBtn, dotsContainer, carouselLabel, nextSlideBtn);
+      stage.append(prevPostBtn, imgWrapper, nextPostBtn, carouselCtrl);
       root.append(backdrop, header, stage);
       root.addEventListener("contextmenu", (e) => {
         e.preventDefault();
@@ -266,43 +316,48 @@
         fullscreenBtn,
         closeBtn,
         stage,
-        prevBtn,
-        nextBtn,
+        prevPostBtn,
+        nextPostBtn,
         imgWrapper,
         img,
         shield,
-        spinner
+        spinner,
+        carouselCtrl,
+        prevSlideBtn,
+        nextSlideBtn,
+        dotsContainer,
+        carouselLabel
       };
       document.addEventListener("mousemove", this._handleMouseMove);
       document.addEventListener("mouseup", this._handleMouseUp);
       root.addEventListener("mousemove", this._resetIdleTimer);
     }
     /**
-     * Opens the lightbox overlay with the complete gallery sequence.
+     * Opens the lightbox overlay with the complete gallery of posts.
      *
-     * @param {Array<Object>} items Array of gallery items
-     * @param {number} [startIndex=0]
+     * @param {Array<Object>} posts Array of post objects
+     * @param {number} [startPostIndex=0]
+     * @param {number} [startSlideIndex=0]
      */
-    open(items, startIndex = 0) {
-      if (!items || items.length === 0) return;
+    open(posts, startPostIndex = 0, startSlideIndex = 0) {
+      if (!posts || posts.length === 0) return;
       this._ensureDom();
-      this.items = items;
-      this.currentIndex = Math.max(0, Math.min(startIndex, items.length - 1));
+      this.posts = posts;
+      this.currentPostIndex = Math.max(0, Math.min(startPostIndex, posts.length - 1));
+      this.currentSlideIndex = startSlideIndex;
       if (!document.body.contains(this.dom.root)) {
         document.body.appendChild(this.dom.root);
       }
-      this._originalBodyOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
       requestAnimationFrame(() => {
         this.dom.root.classList.add("immerse-active");
         this._resetIdleTimer();
       });
       this.isOpen = true;
       document.addEventListener("keydown", this._handleKeyDown, true);
-      this.loadImage(this.currentIndex);
+      this.loadCurrent();
     }
     /**
-     * Closes and cleans up the lightbox overlay.
+     * Closes the lightbox overlay.
      */
     close() {
       if (!this.isOpen || !this.dom) return;
@@ -311,9 +366,6 @@
       if (this._idleTimer) {
         clearTimeout(this._idleTimer);
         this._idleTimer = null;
-      }
-      if (this._originalBodyOverflow !== void 0) {
-        document.body.style.overflow = this._originalBodyOverflow;
       }
       this.isOpen = false;
       this.resetTransform();
@@ -328,113 +380,144 @@
       }, 250);
     }
     /**
-     * Updates the sequence items dynamically if new posts load into the grid.
-     * @param {Array<Object>} newItems
+     * Updates posts dynamically when Instagram loads more items in the background.
+     *
+     * @param {Array<Object>} newPosts
      */
-    updateSequence(newItems) {
-      if (!newItems || newItems.length === 0) return;
-      const oldLength = this.items.length;
-      const currentItem = this.items[this.currentIndex];
-      this.items = newItems;
-      if (currentItem) {
-        const newIdx = this.items.findIndex((it) => it.id === currentItem.id || it.url === currentItem.url);
-        if (newIdx !== -1) {
-          this.currentIndex = newIdx;
-        }
-      }
-      if (this._waitingForNextBatch && this.items.length > oldLength) {
-        this._waitingForNextBatch = false;
-        this.loadImage(oldLength);
+    updatePosts(newPosts) {
+      if (!newPosts || newPosts.length === 0) return;
+      const oldLength = this.posts.length;
+      this.posts = newPosts;
+      if (this._waitingForNextPost && this.posts.length > oldLength) {
+        this._waitingForNextPost = false;
+        this.goToPost(oldLength, 0);
       } else {
-        this._updateCounter();
+        this._updateHeaderCounter();
       }
     }
     /**
-     * Loads the specified image index into the lightbox.
-     *
-     * @param {number} index
+     * Loads the current post and current slide into view.
      */
-    loadImage(index) {
-      if (!this.items[index]) return;
-      this.currentIndex = index;
-      const item = this.items[index];
-      if (this.currentIndex >= this.items.length - 3 && this.onLoadMore) {
+    loadCurrent() {
+      const post = this.posts[this.currentPostIndex];
+      if (!post || !post.slides || post.slides.length === 0) return;
+      this.currentSlideIndex = Math.max(0, Math.min(this.currentSlideIndex, post.slides.length - 1));
+      const slide = post.slides[this.currentSlideIndex];
+      if (this.currentPostIndex >= this.posts.length - 3 && this.onLoadMore) {
         this.onLoadMore();
       }
       this.resetTransform();
       this.dom.spinner.style.display = "block";
       this.dom.img.style.opacity = "0";
-      this._updateCounter();
+      this._updateHeaderCounter();
+      this._updateCarouselControls(post);
       this.dom.badgeText.textContent = "Fetching Ultra-HD...";
       const tempImg = new Image();
+      const targetPostIndex = this.currentPostIndex;
+      const targetSlideIndex = this.currentSlideIndex;
       tempImg.onload = () => {
-        if (this.currentIndex !== index) return;
-        this.dom.img.src = item.url;
+        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
+        this.dom.img.src = slide.url;
         this.dom.img.style.opacity = "1";
         this.dom.spinner.style.display = "none";
         const w = tempImg.naturalWidth;
         const h = tempImg.naturalHeight;
         this.dom.badgeText.textContent = `${w} \xD7 ${h} \u2022 Highest Quality`;
-        this._preloadAdjacent(index);
+        this._preloadAdjacent();
       };
       tempImg.onerror = () => {
-        if (this.currentIndex !== index) return;
+        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
         this.dom.spinner.style.display = "none";
         this.dom.badgeText.textContent = "HD Ready";
-        this.dom.img.src = item.url;
+        this.dom.img.src = slide.url;
         this.dom.img.style.opacity = "1";
       };
-      tempImg.src = item.url;
+      tempImg.src = slide.url;
     }
-    _updateCounter() {
-      const total = this.items.length;
-      const current = this.currentIndex + 1;
-      const item = this.items[this.currentIndex];
-      if (total > 1) {
-        this.dom.counter.style.display = "block";
-        if (item && item.isCarousel && item.totalSlides > 1) {
-          this.dom.counter.textContent = `${current} / ${total} \u2022 Slide ${item.slideIndex + 1}/${item.totalSlides}`;
-        } else {
-          this.dom.counter.textContent = `${current} / ${total}`;
-        }
-        this.dom.prevBtn.style.display = "flex";
-        this.dom.nextBtn.style.display = "flex";
-        this.dom.prevBtn.disabled = this.currentIndex === 0;
-        this.dom.nextBtn.disabled = false;
-      } else {
-        this.dom.counter.style.display = "none";
-        this.dom.prevBtn.style.display = "none";
-        this.dom.nextBtn.style.display = "none";
+    _updateHeaderCounter() {
+      const totalPosts = this.posts.length;
+      const currentPostNum = this.currentPostIndex + 1;
+      this.dom.counter.textContent = `Post ${currentPostNum} of ${totalPosts}`;
+      this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
+      this.dom.nextPostBtn.disabled = false;
+    }
+    _updateCarouselControls(post) {
+      if (!post || post.slides.length <= 1) {
+        this.dom.carouselCtrl.style.display = "none";
+        return;
+      }
+      this.dom.carouselCtrl.style.display = "flex";
+      const totalSlides = post.slides.length;
+      const currentSlideNum = this.currentSlideIndex + 1;
+      this.dom.carouselLabel.textContent = `Slide ${currentSlideNum} of ${totalSlides}`;
+      this.dom.prevSlideBtn.disabled = this.currentSlideIndex === 0;
+      this.dom.nextSlideBtn.disabled = this.currentSlideIndex === totalSlides - 1;
+      this.dom.dotsContainer.innerHTML = "";
+      for (let i = 0; i < totalSlides; i++) {
+        const dot = createElement("div", {
+          className: `immerse-dot ${i === this.currentSlideIndex ? "immerse-dot-active" : ""}`,
+          attributes: { title: `Go to slide ${i + 1}` },
+          events: {
+            click: (e) => {
+              e.stopPropagation();
+              this.goToSlide(i);
+            }
+          }
+        });
+        this.dom.dotsContainer.appendChild(dot);
       }
     }
-    _preloadAdjacent(currentIndex) {
-      [-1, 1, 2].forEach((offset) => {
-        const idx = currentIndex + offset;
-        if (this.items[idx]?.url) {
-          const pre = new Image();
-          pre.src = this.items[idx].url;
-        }
-      });
-    }
-    next() {
-      if (this.currentIndex >= this.items.length - 2 && this.onLoadMore) {
-        this.onLoadMore();
+    _preloadAdjacent() {
+      const post = this.posts[this.currentPostIndex];
+      if (post && post.slides[this.currentSlideIndex + 1]) {
+        const pre = new Image();
+        pre.src = post.slides[this.currentSlideIndex + 1].url;
       }
-      if (this.currentIndex < this.items.length - 1) {
-        this.loadImage(this.currentIndex + 1);
-        this._resetIdleTimer();
+      const nextPost = this.posts[this.currentPostIndex + 1];
+      if (nextPost && nextPost.slides[0]) {
+        const pre = new Image();
+        pre.src = nextPost.slides[0].url;
+      }
+    }
+    /* ---------------- Primary Navigation: Grid Posts ---------------- */
+    nextPost() {
+      if (this.currentPostIndex < this.posts.length - 1) {
+        this.goToPost(this.currentPostIndex + 1, 0);
       } else if (this.onLoadMore) {
-        this.dom.counter.textContent = "Loading next batch from feed...";
-        this._waitingForNextBatch = true;
+        this.dom.counter.textContent = "Loading more posts from feed...";
+        this._waitingForNextPost = true;
         this.onLoadMore();
       }
     }
-    prev() {
-      if (this.currentIndex > 0) {
-        this.loadImage(this.currentIndex - 1);
-        this._resetIdleTimer();
+    prevPost() {
+      if (this.currentPostIndex > 0) {
+        this.goToPost(this.currentPostIndex - 1, 0);
       }
     }
+    goToPost(postIndex, slideIndex = 0) {
+      this.currentPostIndex = postIndex;
+      this.currentSlideIndex = slideIndex;
+      this.loadCurrent();
+      this._resetIdleTimer();
+    }
+    /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
+    nextSlide() {
+      const post = this.posts[this.currentPostIndex];
+      if (post && this.currentSlideIndex < post.slides.length - 1) {
+        this.goToSlide(this.currentSlideIndex + 1);
+      }
+    }
+    prevSlide() {
+      if (this.currentSlideIndex > 0) {
+        this.goToSlide(this.currentSlideIndex - 1);
+      }
+    }
+    goToSlide(slideIndex) {
+      this.currentSlideIndex = slideIndex;
+      this.loadCurrent();
+      this._resetIdleTimer();
+    }
+    /* ---------------- Zoom & Pan Transforms ---------------- */
     resetTransform() {
       this.scale = 1;
       this.panX = 0;
@@ -527,17 +610,29 @@
           e.stopPropagation();
           this.close();
           break;
+        // Primary Navigation (Posts in Grid)
         case "ArrowRight":
         case "l":
         case "L":
           e.preventDefault();
-          this.next();
+          this.nextPost();
           break;
         case "ArrowLeft":
         case "j":
         case "J":
           e.preventDefault();
-          this.prev();
+          this.prevPost();
+          break;
+        // Secondary Navigation (Carousel Slides of Current Post)
+        case "ArrowDown":
+        case "]":
+          e.preventDefault();
+          this.nextSlide();
+          break;
+        case "ArrowUp":
+        case "[":
+          e.preventDefault();
+          this.prevSlide();
           break;
         case "f":
         case "F":
@@ -603,7 +698,7 @@
     }
     /**
      * Centralized delegated hover detection ensuring the button appears
-     * whenever the user hovers ANYWHERE within the image tile (grid item or feed card).
+     * whenever the user hovers anywhere within a legitimate post grid tile or feed card.
      */
     _initDelegatedHover() {
       let hideTimer = null;
@@ -612,7 +707,7 @@
         if (!settings.enabled) return;
         const target = e.target;
         if (!target) return;
-        const tile = target.closest('a[href*="/p/"]') || target.closest('a[href*="/reel/"]') || target.closest("article") || target.closest('div[role="dialog"]');
+        const tile = target.closest('a[href*="/p/"]') || target.closest('a[href*="/reel/"]') || target.closest("article");
         if (tile && this.tileToButtonMap.has(tile)) {
           if (hideTimer) {
             clearTimeout(hideTimer);
@@ -638,7 +733,7 @@
             hideTimer = setTimeout(() => {
               btn.classList.remove("immerse-visible");
               if (this.activeButton === btn) this.activeButton = null;
-            }, 120);
+            }, 100);
           }
         }
       }, { passive: true });
@@ -650,8 +745,8 @@
      * @param {HTMLElement} container
      */
     attach(imgElement, container) {
-      if (!imgElement) return;
-      const tile = imgElement.closest('a[href*="/p/"]') || imgElement.closest('a[href*="/reel/"]') || imgElement.closest("article") || container || imgElement.parentElement;
+      if (!imgElement || !isLegitimatePostImage(imgElement)) return;
+      const tile = imgElement.closest('a[href*="/p/"]') || imgElement.closest('a[href*="/reel/"]') || imgElement.closest("article") || container;
       if (!tile || this.tileToButtonMap.has(tile)) return;
       const tileStyle = window.getComputedStyle(tile);
       if (tileStyle.position === "static") {
@@ -664,8 +759,8 @@
         className: "immerse-hover-btn",
         attributes: {
           type: "button",
-          title: "Open in Fullscreen Ultra-HD (Immerse)",
-          "aria-label": "Open in Fullscreen Ultra-HD"
+          title: "View in Fullscreen Ultra-HD (Immerse)",
+          "aria-label": "View in Fullscreen Ultra-HD"
         },
         innerHTML: `
         <svg viewBox="0 0 24 24" fill="none">
@@ -900,26 +995,24 @@
       }
     }
     /**
-     * Scans a root element for Instagram images.
+     * Scans a root element strictly for legitimate Instagram post and grid images.
      *
      * @param {HTMLElement} root
      */
     scan(root) {
       if (!root || !root.querySelectorAll) return;
-      const selector = 'article img, a[href*="/p/"] img, a[href*="/reel/"] img, div[role="dialog"] img, main img[srcset], div[role="presentation"] img';
-      const images = Array.from(root.querySelectorAll(selector));
-      if (root.tagName === "IMG" && root.matches(selector)) {
-        images.push(root);
+      const postTiles = Array.from(root.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], article'));
+      if (root.matches && (root.matches('a[href*="/p/"], a[href*="/reel/"]') || root.tagName === "ARTICLE")) {
+        postTiles.push(root);
       }
-      for (const img of images) {
-        if (this.processedImages.has(img)) continue;
-        const isAvatar = img.alt?.toLowerCase().includes("profile picture") || img.closest("header") !== null || img.width < 120 && img.width > 0;
-        if (isAvatar) continue;
-        this.processedImages.add(img);
-        const container = img.closest('a[href*="/p/"]') || img.closest('a[href*="/reel/"]') || img.closest("article") || img.closest('div[role="dialog"]') || img.parentElement;
-        if (container) {
-          this.mediaEntries.push({ img, container });
-          this.onMediaFound(img, container);
+      for (const tile of postTiles) {
+        const images = Array.from(tile.querySelectorAll("img[src], img[srcset]"));
+        for (const img of images) {
+          if (this.processedImages.has(img)) continue;
+          if (!isLegitimatePostImage(img)) continue;
+          this.processedImages.add(img);
+          this.mediaEntries.push({ img, container: tile });
+          this.onMediaFound(img, tile);
         }
       }
     }
@@ -968,109 +1061,104 @@
   // src/modules/gallery-sequencer.js
   var GallerySequencer = class {
     constructor() {
-      this.items = [];
-      this.knownImgSet = /* @__PURE__ */ new WeakSet();
+      this.posts = [];
       this.listeners = /* @__PURE__ */ new Set();
     }
     /**
-     * Rebuilds and synchronizes the sequence of all discoverable media on the page
-     * sorted in visual reading order (top-to-bottom, left-to-right).
+     * Synchronizes and sorts all legitimate post tiles visible in the DOM
+     * in visual reading order (top-to-bottom, left-to-right).
      *
-     * @param {HTMLElement[]} rootElements
+     * @param {Array<{img: HTMLImageElement, container: HTMLElement}>} mediaEntries
      * @returns {Array<Object>}
      */
     syncSequence(mediaEntries) {
-      if (!mediaEntries || mediaEntries.length === 0) return this.items;
-      const validEntries = mediaEntries.filter((entry) => entry.img && document.body.contains(entry.img));
-      validEntries.sort((a, b) => {
-        const rectA = (a.container || a.img).getBoundingClientRect();
-        const rectB = (b.container || b.img).getBoundingClientRect();
+      if (!mediaEntries || mediaEntries.length === 0) return this.posts;
+      const validEntries = mediaEntries.filter((entry) => {
+        return entry.img && document.body.contains(entry.img) && isLegitimatePostImage(entry.img);
+      });
+      const postMap = /* @__PURE__ */ new Map();
+      for (const entry of validEntries) {
+        const tile = entry.container || findClosestPost(entry.img);
+        if (!tile) continue;
+        if (!postMap.has(tile)) {
+          postMap.set(tile, {
+            tile,
+            images: []
+          });
+        }
+        postMap.get(tile).images.push(entry.img);
+      }
+      const sortedTiles = Array.from(postMap.values()).sort((a, b) => {
+        const rectA = a.tile.getBoundingClientRect();
+        const rectB = b.tile.getBoundingClientRect();
         const topDiff = rectA.top + window.scrollY - (rectB.top + window.scrollY);
-        if (Math.abs(topDiff) > 20) {
+        if (Math.abs(topDiff) > 25) {
           return topDiff;
         }
         return rectA.left + window.scrollX - (rectB.left + window.scrollX);
       });
-      const newSequence = [];
-      const seenUrls = /* @__PURE__ */ new Set();
-      validEntries.forEach((entry, postIndex) => {
-        const { img, container } = entry;
-        const post = findClosestPost(container || img);
-        const postImages = post ? findPostImages(post) : [img];
-        if (postImages.length > 1) {
-          postImages.forEach((slideImg, slideIndex) => {
-            const url = getHighestResolutionUrl(slideImg);
-            if (url && !seenUrls.has(url)) {
-              seenUrls.add(url);
-              newSequence.push({
-                id: `${postIndex}-${slideIndex}-${url.slice(-16)}`,
-                img: slideImg,
-                container: container || post,
-                post,
-                url,
-                width: slideImg.naturalWidth || 1080,
-                height: slideImg.naturalHeight || 1080,
-                postIndex,
-                slideIndex,
-                totalSlides: postImages.length,
-                isCarousel: true
-              });
-            }
-          });
-        } else {
-          const url = getHighestResolutionUrl(img);
+      const newPosts = [];
+      sortedTiles.forEach((group, postIndex) => {
+        const { tile } = group;
+        const postImages = findPostImages(tile);
+        const uniqueSlides = [];
+        const seenUrls = /* @__PURE__ */ new Set();
+        for (const imgEl of postImages) {
+          const url = getHighestResolutionUrl(imgEl);
           if (url && !seenUrls.has(url)) {
             seenUrls.add(url);
-            newSequence.push({
-              id: `${postIndex}-0-${url.slice(-16)}`,
-              img,
-              container: container || post,
-              post,
+            uniqueSlides.push({
               url,
-              width: img.naturalWidth || 1080,
-              height: img.naturalHeight || 1080,
-              postIndex,
-              slideIndex: 0,
-              totalSlides: 1,
-              isCarousel: false
+              width: imgEl.naturalWidth || 1080,
+              height: imgEl.naturalHeight || 1080,
+              element: imgEl
             });
           }
         }
+        if (uniqueSlides.length > 0) {
+          newPosts.push({
+            id: `post-${postIndex}-${uniqueSlides[0].url.slice(-12)}`,
+            tile,
+            slides: uniqueSlides,
+            isCarousel: uniqueSlides.length > 1
+          });
+        }
       });
-      this.items = newSequence;
+      this.posts = newPosts;
       this._notify();
-      return this.items;
+      return this.posts;
     }
     /**
-     * Finds the sequential index corresponding to a specific image element or URL.
+     * Finds the post index and slide index for a clicked image.
      *
      * @param {HTMLImageElement} targetImg
-     * @returns {number} Index, or 0 if not found
+     * @returns {{postIndex: number, slideIndex: number}}
      */
-    findIndex(targetImg) {
-      if (!targetImg || this.items.length === 0) return 0;
+    findLocation(targetImg) {
+      if (!targetImg || this.posts.length === 0) {
+        return { postIndex: 0, slideIndex: 0 };
+      }
       const targetSrc = targetImg.currentSrc || targetImg.src || "";
-      const index = this.items.findIndex((item) => {
-        if (item.img === targetImg) return true;
-        if (targetSrc && item.url.includes(targetSrc)) return true;
-        return false;
-      });
-      return index !== -1 ? index : 0;
+      for (let pIdx = 0; pIdx < this.posts.length; pIdx++) {
+        const post = this.posts[pIdx];
+        for (let sIdx = 0; sIdx < post.slides.length; sIdx++) {
+          const slide = post.slides[sIdx];
+          if (slide.element === targetImg || targetSrc && slide.url.includes(targetSrc)) {
+            return { postIndex: pIdx, slideIndex: sIdx };
+          }
+        }
+      }
+      const foundTileIdx = this.posts.findIndex((p) => p.tile.contains(targetImg));
+      if (foundTileIdx !== -1) {
+        return { postIndex: foundTileIdx, slideIndex: 0 };
+      }
+      return { postIndex: 0, slideIndex: 0 };
     }
-    /**
-     * Returns item at index.
-     * @param {number} index
-     * @returns {Object|null}
-     */
-    getItem(index) {
-      return this.items[index] || null;
-    }
-    /**
-     * Total number of items in sequence.
-     * @returns {number}
-     */
     get length() {
-      return this.items.length;
+      return this.posts.length;
+    }
+    getPost(index) {
+      return this.posts[index] || null;
     }
     subscribe(listener) {
       this.listeners.add(listener);
@@ -1079,9 +1167,9 @@
     _notify() {
       for (const listener of this.listeners) {
         try {
-          listener(this.items);
+          listener(this.posts);
         } catch (e) {
-          console.error("[GallerySequencer] Error in listener:", e);
+          console.error("[GallerySequencer] Listener error:", e);
         }
       }
     }
@@ -1114,8 +1202,8 @@
           if (currentSettings.enabled) {
             this.hoverButtons.attach(img, container);
             if (this.overlay?.isOpen) {
-              const updatedItems = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
-              this.overlay.updateSequence(updatedItems);
+              const updatedPosts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
+              this.overlay.updatePosts(updatedPosts);
             }
           }
         }
@@ -1130,7 +1218,7 @@
               active: true,
               settings: settingsStore.get(),
               overlayOpen: this.overlay?.isOpen || false,
-              totalItems: this.sequencer?.length || 0
+              totalPosts: this.sequencer?.length || 0
             });
           } else if (message.type === "SETTINGS_CHANGED") {
             this.handleSettingsChange(message.settings);
@@ -1143,10 +1231,10 @@
         this.mediaDetector.start();
       }
       this.initialized = true;
-      console.log("[Immerse] Instagram High-Resolution Extension loaded with Liquid Glass UI.");
+      console.log("[Immerse] Instagram High-Resolution Extension loaded.");
     }
     /**
-     * Handles opening the fullscreen overlay with the complete page sequence.
+     * Handles opening the fullscreen overlay with the synchronized grid posts.
      *
      * @param {HTMLImageElement} targetImg
      * @param {HTMLElement} container
@@ -1154,13 +1242,13 @@
     handleTrigger(targetImg, container) {
       const settings = settingsStore.get();
       if (!settings.enabled) return;
-      const sequenceItems = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
-      if (sequenceItems.length > 0) {
-        const initialIndex = this.sequencer.findIndex(targetImg);
-        this.overlay.open(sequenceItems, initialIndex);
+      const posts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
+      if (posts.length > 0) {
+        const { postIndex, slideIndex } = this.sequencer.findLocation(targetImg);
+        this.overlay.open(posts, postIndex, slideIndex);
       } else {
         const items = this.mediaDetector.resolvePostMediaItems(targetImg, container);
-        this.overlay.open(items, 0);
+        this.overlay.open([{ id: "post-0", tile: container, slides: items }], 0, 0);
       }
     }
     handleSettingsChange(newSettings) {
@@ -1174,11 +1262,18 @@
       }
     }
     /**
-     * Triggers background scrolling on the underlying page so Instagram loads the next batch of posts.
+     * Triggers background scrolling on the underlying page so Instagram loads the next batch of grid posts.
      */
     handleLoadMore() {
-      window.scrollBy({ top: window.innerHeight * 1.5, behavior: "instant" });
+      const target = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+      window.scrollTo({ top: target, behavior: "instant" });
       window.dispatchEvent(new Event("scroll"));
+      document.dispatchEvent(new Event("scroll"));
+      const mainEl = document.querySelector("main") || document.querySelector('div[role="main"]');
+      if (mainEl && mainEl.scrollHeight > mainEl.clientHeight) {
+        mainEl.scrollTop = mainEl.scrollHeight;
+        mainEl.dispatchEvent(new Event("scroll"));
+      }
     }
   };
   var app = new ImmerseApp();

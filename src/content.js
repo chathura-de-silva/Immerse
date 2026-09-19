@@ -25,7 +25,7 @@ class ImmerseApp {
     // Load user preferences
     const settings = await settingsStore.init();
 
-    // Instantiate Gallery Sequencer for desktop folder-like navigation
+    // Instantiate Gallery Sequencer for post and carousel slide organization
     this.sequencer = new GallerySequencer();
 
     // Instantiate Lightbox Overlay with infinite feed loading hook
@@ -47,10 +47,10 @@ class ImmerseApp {
         if (currentSettings.enabled) {
           this.hoverButtons.attach(img, container);
 
-          // If overlay is open, synchronize new images into the active sequence
+          // If overlay is open, synchronize newly loaded posts into the active gallery
           if (this.overlay?.isOpen) {
-            const updatedItems = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
-            this.overlay.updateSequence(updatedItems);
+            const updatedPosts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
+            this.overlay.updatePosts(updatedPosts);
           }
         }
       }
@@ -69,7 +69,7 @@ class ImmerseApp {
             active: true,
             settings: settingsStore.get(),
             overlayOpen: this.overlay?.isOpen || false,
-            totalItems: this.sequencer?.length || 0
+            totalPosts: this.sequencer?.length || 0
           });
         } else if (message.type === 'SETTINGS_CHANGED') {
           this.handleSettingsChange(message.settings);
@@ -85,11 +85,11 @@ class ImmerseApp {
     }
 
     this.initialized = true;
-    console.log('[Immerse] Instagram High-Resolution Extension loaded with Liquid Glass UI.');
+    console.log('[Immerse] Instagram High-Resolution Extension loaded.');
   }
 
   /**
-   * Handles opening the fullscreen overlay with the complete page sequence.
+   * Handles opening the fullscreen overlay with the synchronized grid posts.
    *
    * @param {HTMLImageElement} targetImg
    * @param {HTMLElement} container
@@ -98,16 +98,16 @@ class ImmerseApp {
     const settings = settingsStore.get();
     if (!settings.enabled) return;
 
-    // Synchronize the complete sequence of all posts on the page
-    const sequenceItems = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
+    // Synchronize all legitimate grid posts currently in DOM
+    const posts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
 
-    if (sequenceItems.length > 0) {
-      const initialIndex = this.sequencer.findIndex(targetImg);
-      this.overlay.open(sequenceItems, initialIndex);
+    if (posts.length > 0) {
+      const { postIndex, slideIndex } = this.sequencer.findLocation(targetImg);
+      this.overlay.open(posts, postIndex, slideIndex);
     } else {
-      // Fallback to single post items if sequence was empty
+      // Fallback for single post
       const items = this.mediaDetector.resolvePostMediaItems(targetImg, container);
-      this.overlay.open(items, 0);
+      this.overlay.open([{ id: 'post-0', tile: container, slides: items }], 0, 0);
     }
   }
 
@@ -123,11 +123,20 @@ class ImmerseApp {
   }
 
   /**
-   * Triggers background scrolling on the underlying page so Instagram loads the next batch of posts.
+   * Triggers background scrolling on the underlying page so Instagram loads the next batch of grid posts.
    */
   handleLoadMore() {
-    window.scrollBy({ top: window.innerHeight * 1.5, behavior: 'instant' });
+    const target = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    window.scrollTo({ top: target, behavior: 'instant' });
     window.dispatchEvent(new Event('scroll'));
+    document.dispatchEvent(new Event('scroll'));
+
+    // Check main container if present
+    const mainEl = document.querySelector('main') || document.querySelector('div[role="main"]');
+    if (mainEl && mainEl.scrollHeight > mainEl.clientHeight) {
+      mainEl.scrollTop = mainEl.scrollHeight;
+      mainEl.dispatchEvent(new Event('scroll'));
+    }
   }
 }
 

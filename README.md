@@ -27,7 +27,9 @@ A lightweight, non-intrusive browser extension (Manifest V3) that simulates larg
 | Key | Action |
 | --- | --- |
 | `Esc` | Close fullscreen viewer |
-| `←` / `→` (or `J` / `L`) | Previous / Next image across the entire grid or feed |
+| `←` / `→` (or `J` / `L`) | Previous / Next Post in Grid |
+| `↑` / `↓` (or `[` / `]`) | Previous / Next Carousel Slide in current post |
+| `Click Slide Dots` | Jump directly to carousel slide |
 | `F` | Toggle true fullscreen mode |
 | `0` | Reset zoom and pan |
 | `+` / `-` | Zoom in / Zoom out |

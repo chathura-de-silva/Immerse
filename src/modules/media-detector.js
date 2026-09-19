@@ -1,10 +1,11 @@
 /**
  * media-detector.js
- * Observes and discovers Instagram feed posts, carousels, profile grid items, and explore items.
+ * Strictly observes and discovers legitimate Instagram grid posts and feed articles.
+ * Never attaches to profile avatars, story bubbles, or hovercard dialogs.
  */
 
 import { getHighestResolutionUrl } from '../utils/srcset-parser.js';
-import { findClosestPost, findPostImages } from '../utils/dom-helpers.js';
+import { findClosestPost, findPostImages, isLegitimatePostImage } from '../utils/dom-helpers.js';
 
 export class MediaDetector {
   /**
@@ -74,43 +75,34 @@ export class MediaDetector {
   }
 
   /**
-   * Scans a root element for Instagram images.
+   * Scans a root element strictly for legitimate Instagram post and grid images.
    *
    * @param {HTMLElement} root
    */
   scan(root) {
     if (!root || !root.querySelectorAll) return;
 
-    // Semantic selector covering feed articles, profile grid links, explore tiles, dialogs, and main feeds
-    const selector = 'article img, a[href*="/p/"] img, a[href*="/reel/"] img, div[role="dialog"] img, main img[srcset], div[role="presentation"] img';
-    const images = Array.from(root.querySelectorAll(selector));
-
-    if (root.tagName === 'IMG' && root.matches(selector)) {
-      images.push(root);
+    // Strict semantic selector targeting only grid post links and feed post articles
+    const postTiles = Array.from(root.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], article'));
+    if (root.matches && (root.matches('a[href*="/p/"], a[href*="/reel/"]') || root.tagName === 'ARTICLE')) {
+      postTiles.push(root);
     }
 
-    for (const img of images) {
-      if (this.processedImages.has(img)) continue;
+    for (const tile of postTiles) {
+      // Find candidate images inside this tile
+      const images = Array.from(tile.querySelectorAll('img[src], img[srcset]'));
 
-      // Filter out avatars, icons, and small UI thumbnails
-      const isAvatar = img.alt?.toLowerCase().includes('profile picture') ||
-                       img.closest('header') !== null ||
-                       (img.width < 120 && img.width > 0);
+      for (const img of images) {
+        if (this.processedImages.has(img)) continue;
 
-      if (isAvatar) continue;
+        // Strict validation: must be a legitimate post photo, not avatar or UI icon
+        if (!isLegitimatePostImage(img)) continue;
 
-      this.processedImages.add(img);
+        this.processedImages.add(img);
 
-      // Find the visual wrapper / tile anchor
-      const container = img.closest('a[href*="/p/"]') ||
-                        img.closest('a[href*="/reel/"]') ||
-                        img.closest('article') ||
-                        img.closest('div[role="dialog"]') ||
-                        img.parentElement;
-
-      if (container) {
-        this.mediaEntries.push({ img, container });
-        this.onMediaFound(img, container);
+        // Record entry and notify
+        this.mediaEntries.push({ img, container: tile });
+        this.onMediaFound(img, tile);
       }
     }
   }
