@@ -11,7 +11,8 @@ import {
   isCarouselPost,
   getEstimatedSlideCount,
   findNativeCarouselNextButton,
-  findNativeCarouselPrevButton
+  findNativeCarouselPrevButton,
+  isFeedContext
 } from '../utils/dom-helpers.js';
 import { getHighestResolutionUrl } from '../utils/srcset-parser.js';
 
@@ -462,6 +463,11 @@ export class ViewerOverlay {
    */
   _syncPostSlides(post) {
     if (!post || !post.tile) return;
+    if (!isFeedContext(post.tile)) {
+      post.isCarousel = false;
+      post.totalSlides = 1;
+      return;
+    }
     const postImages = findPostImages(post.tile);
     const seenUrls = new Set(post.slides.map(s => s.url));
 
@@ -744,10 +750,7 @@ export class ViewerOverlay {
 
   _updateHeaderCounter() {
     const post = this.posts[this.currentPostIndex];
-    const isFeed = window.location.pathname === '/' ||
-                   window.location.pathname.startsWith('/feed') ||
-                   post?.tile?.tagName === 'ARTICLE' ||
-                   !!post?.tile?.closest?.('article');
+    const isFeed = isFeedContext(post?.tile);
 
     if (isFeed) {
       this.dom.counter.style.display = 'none';
@@ -763,7 +766,10 @@ export class ViewerOverlay {
   }
 
   _updateCarouselControls(post) {
-    if (!post || (!post.isCarousel && post.slides.length <= 1)) {
+    const isFeed = isFeedContext(post?.tile);
+
+    // Suppress carousel navigator completely when in profile view, even for carousel posts
+    if (!isFeed || !post || (!post.isCarousel && post.slides.length <= 1)) {
       this.dom.carouselCtrl.style.display = 'none';
       return;
     }
@@ -819,9 +825,9 @@ export class ViewerOverlay {
       }
     }
 
-    // Preload both previous and next slide of current post carousel
+    // Preload both previous and next slide of current post carousel (feed only)
     const post = this.posts[this.currentPostIndex];
-    if (post && post.slides) {
+    if (post && post.slides && isFeedContext(post.tile)) {
       if (post.slides[this.currentSlideIndex - 1]?.url) {
         const pre = new Image();
         pre.src = post.slides[this.currentSlideIndex - 1].url;
@@ -923,11 +929,11 @@ export class ViewerOverlay {
   /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
 
   nextSlide() {
+    const post = this.posts[this.currentPostIndex];
+    if (!post || !isFeedContext(post.tile)) return;
     this._lastNavTime = Date.now();
     this._navDirection = 1;
     this.resetZoomState();
-    const post = this.posts[this.currentPostIndex];
-    if (!post) return;
 
     if (this.currentSlideIndex < post.slides.length - 1) {
       this.goToSlide(this.currentSlideIndex + 1);
@@ -947,6 +953,8 @@ export class ViewerOverlay {
   }
 
   prevSlide() {
+    const post = this.posts[this.currentPostIndex];
+    if (!post || !isFeedContext(post.tile)) return;
     this._lastNavTime = Date.now();
     this._navDirection = -1;
     this.resetZoomState();
@@ -961,11 +969,11 @@ export class ViewerOverlay {
   }
 
   goToSlide(slideIndex) {
+    const post = this.posts[this.currentPostIndex];
+    if (!post || !isFeedContext(post.tile)) return;
     this._lastNavTime = Date.now();
     this._navDirection = slideIndex >= this.currentSlideIndex ? 1 : -1;
     this.resetZoomState();
-    const post = this.posts[this.currentPostIndex];
-    if (!post) return;
 
     if (slideIndex < post.slides.length) {
       this.currentSlideIndex = slideIndex;

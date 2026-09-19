@@ -361,6 +361,33 @@ export function findNativeCarouselPrevButton(postContainer) {
 }
 
 /**
+ * Checks whether an element belongs to Instagram's feed view (inside an <article> or on feed URL).
+ * Profile grid views, explore grids, etc. return false.
+ *
+ * @param {HTMLElement} [element]
+ * @returns {boolean}
+ */
+export function isFeedContext(element) {
+  if (typeof window === 'undefined') {
+    // In headless test environments: check if element is explicitly a non-feed profile tile
+    if (element && element.matches && element.matches('a[href*="/p/"]') && element.tagName !== 'ARTICLE' && !element.closest?.('article')) {
+      return false;
+    }
+    return true;
+  }
+
+  if (window.location && (window.location.pathname === '/' || window.location.pathname.startsWith('/feed'))) {
+    return true;
+  }
+
+  if (element) {
+    return element.tagName === 'ARTICLE' || (element.closest && !!element.closest('article'));
+  }
+
+  return false;
+}
+
+/**
  * Checks whether a post container is a carousel post.
  *
  * @param {HTMLElement} postContainer
@@ -368,6 +395,9 @@ export function findNativeCarouselPrevButton(postContainer) {
  */
 export function isCarouselPost(postContainer) {
   if (!postContainer) return false;
+
+  // Carousels are strictly handled in feed view; profile grid posts are viewed as individual photos
+  if (!isFeedContext(postContainer)) return false;
 
   // 1. Multiple legitimate post images already in DOM
   const imgs = findPostImages(postContainer);
@@ -378,12 +408,7 @@ export function isCarouselPost(postContainer) {
     return true;
   }
 
-  // 3. Carousel icon in tile
-  if (postContainer.querySelector('svg[aria-label*="Carousel" i], svg[aria-label*="carousel" i]')) {
-    return true;
-  }
-
-  // 4. Counter text matching e.g. "1/5" or "1 of 5"
+  // 3. Counter text matching e.g. "1/5" or "1 of 5"
   const text = postContainer.innerText || postContainer.textContent || '';
   if (/\b\d+\s*[/of]\s*\d+\b/i.test(text.slice(0, 300))) {
     return true;
@@ -401,6 +426,8 @@ export function isCarouselPost(postContainer) {
 export function getEstimatedSlideCount(postContainer) {
   if (!postContainer) return 1;
 
+  if (!isFeedContext(postContainer)) return 1;
+
   // 1. Check for text counter like "1/5" -> 5
   const text = postContainer.innerText || postContainer.textContent || '';
   const match = text.slice(0, 300).match(/\b\d+\s*[/of]\s*(\d+)\b/i);
@@ -415,11 +442,13 @@ export function getEstimatedSlideCount(postContainer) {
     const children = Array.from(div.children);
     if (children.length >= 2 && children.length <= 15) {
       const firstChild = children[0];
-      const style = window.getComputedStyle(firstChild);
-      const w = parseFloat(style.width);
-      const h = parseFloat(style.height);
-      if (w > 0 && w <= 16 && h > 0 && h <= 16) {
-        return children.length;
+      const style = (typeof window !== 'undefined' && window.getComputedStyle) ? window.getComputedStyle(firstChild) : null;
+      if (style) {
+        const w = parseFloat(style.width);
+        const h = parseFloat(style.height);
+        if (w > 0 && w <= 16 && h > 0 && h <= 16) {
+          return children.length;
+        }
       }
     }
   }

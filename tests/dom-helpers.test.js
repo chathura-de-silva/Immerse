@@ -4,7 +4,8 @@ import {
   findPostMediaContainer,
   isCarouselPost,
   getEstimatedSlideCount,
-  isLegitimatePhotoPost
+  isLegitimatePhotoPost,
+  isFeedContext
 } from '../src/utils/dom-helpers.js';
 
 test('isCarouselPost identifies carousel from multiple images or text counter', () => {
@@ -123,3 +124,31 @@ test('isLegitimatePhotoPost strictly rejects reels, videos, and sponsored ads', 
   };
   assert.equal(isLegitimatePhotoPost(mockPhotoPost), true);
 });
+
+test('isFeedContext and isCarouselPost correctly treat profile grid tiles as non-feed single items', () => {
+  const mockProfileTile = {
+    tagName: 'A',
+    matches: (sel) => sel.includes('a[href*="/p/"]'),
+    closest: () => null,
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    innerText: '1/5 photo slide'
+  };
+  assert.equal(isFeedContext(mockProfileTile), false);
+  assert.equal(isCarouselPost(mockProfileTile), false);
+  assert.equal(getEstimatedSlideCount(mockProfileTile), 1);
+
+  const mockFeedArticle = {
+    tagName: 'ARTICLE',
+    matches: () => false,
+    closest: (sel) => sel.includes('article') ? mockFeedArticle : null,
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    innerText: '1/5 photo slide',
+    textContent: '1/5 photo slide'
+  };
+  assert.equal(isFeedContext(mockFeedArticle), true);
+  assert.equal(isCarouselPost(mockFeedArticle), true);
+  assert.equal(getEstimatedSlideCount(mockFeedArticle), 5);
+});
+

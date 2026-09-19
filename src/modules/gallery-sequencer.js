@@ -11,7 +11,8 @@ import {
   isLegitimatePostImage,
   isLegitimatePhotoPost,
   isCarouselPost,
-  getEstimatedSlideCount
+  getEstimatedSlideCount,
+  isFeedContext
 } from '../utils/dom-helpers.js';
 
 /**
@@ -120,9 +121,10 @@ export class GallerySequencer {
 
       if (uniqueSlides.length === 0) continue;
 
-      const isCarousel = (existing && existing.isCarousel) || uniqueSlides.length > 1 || isCarouselPost(tile);
-      const estCount = getEstimatedSlideCount(tile);
-      const totalSlides = Math.max(existing?.totalSlides || 0, estCount, uniqueSlides.length);
+      const isFeed = isFeedContext(tile);
+      const isCarousel = isFeed && ((existing && existing.isCarousel) || uniqueSlides.length > 1 || isCarouselPost(tile));
+      const estCount = isFeed ? getEstimatedSlideCount(tile) : 1;
+      const totalSlides = isFeed ? Math.max(existing?.totalSlides || 0, estCount, uniqueSlides.length) : 1;
 
       if (existing) {
         // Update in-place without altering its established index in the sequence
@@ -159,6 +161,7 @@ export class GallerySequencer {
    */
   appendSlide(post, slide) {
     if (!post || !slide || !slide.url) return post;
+    if (!isFeedContext(post.tile)) return post;
     if (!post.slides.some(s => s.url === slide.url)) {
       post.slides.push(slide);
       post.isCarousel = true;

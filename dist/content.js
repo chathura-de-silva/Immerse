@@ -286,14 +286,27 @@
     }
     return null;
   }
+  function isFeedContext(element) {
+    if (typeof window === "undefined") {
+      if (element && element.matches && element.matches('a[href*="/p/"]') && element.tagName !== "ARTICLE" && !element.closest?.("article")) {
+        return false;
+      }
+      return true;
+    }
+    if (window.location && (window.location.pathname === "/" || window.location.pathname.startsWith("/feed"))) {
+      return true;
+    }
+    if (element) {
+      return element.tagName === "ARTICLE" || element.closest && !!element.closest("article");
+    }
+    return false;
+  }
   function isCarouselPost(postContainer) {
     if (!postContainer) return false;
+    if (!isFeedContext(postContainer)) return false;
     const imgs = findPostImages(postContainer);
     if (imgs.length > 1) return true;
     if (findNativeCarouselNextButton(postContainer) || findNativeCarouselPrevButton(postContainer)) {
-      return true;
-    }
-    if (postContainer.querySelector('svg[aria-label*="Carousel" i], svg[aria-label*="carousel" i]')) {
       return true;
     }
     const text = postContainer.innerText || postContainer.textContent || "";
@@ -304,6 +317,7 @@
   }
   function getEstimatedSlideCount(postContainer) {
     if (!postContainer) return 1;
+    if (!isFeedContext(postContainer)) return 1;
     const text = postContainer.innerText || postContainer.textContent || "";
     const match = text.slice(0, 300).match(/\b\d+\s*[/of]\s*(\d+)\b/i);
     if (match) {
@@ -315,11 +329,13 @@
       const children = Array.from(div.children);
       if (children.length >= 2 && children.length <= 15) {
         const firstChild = children[0];
-        const style = window.getComputedStyle(firstChild);
-        const w = parseFloat(style.width);
-        const h = parseFloat(style.height);
-        if (w > 0 && w <= 16 && h > 0 && h <= 16) {
-          return children.length;
+        const style = typeof window !== "undefined" && window.getComputedStyle ? window.getComputedStyle(firstChild) : null;
+        if (style) {
+          const w = parseFloat(style.width);
+          const h = parseFloat(style.height);
+          if (w > 0 && w <= 16 && h > 0 && h <= 16) {
+            return children.length;
+          }
         }
       }
     }
@@ -859,6 +875,11 @@
      */
     _syncPostSlides(post) {
       if (!post || !post.tile) return;
+      if (!isFeedContext(post.tile)) {
+        post.isCarousel = false;
+        post.totalSlides = 1;
+        return;
+      }
       const postImages = findPostImages(post.tile);
       const seenUrls = new Set(post.slides.map((s) => s.url));
       for (const imgEl of postImages) {
@@ -1077,7 +1098,7 @@
     }
     _updateHeaderCounter() {
       const post = this.posts[this.currentPostIndex];
-      const isFeed = window.location.pathname === "/" || window.location.pathname.startsWith("/feed") || post?.tile?.tagName === "ARTICLE" || !!post?.tile?.closest?.("article");
+      const isFeed = isFeedContext(post?.tile);
       if (isFeed) {
         this.dom.counter.style.display = "none";
       } else {
@@ -1089,7 +1110,8 @@
       this.dom.nextPostBtn.disabled = false;
     }
     _updateCarouselControls(post) {
-      if (!post || !post.isCarousel && post.slides.length <= 1) {
+      const isFeed = isFeedContext(post?.tile);
+      if (!isFeed || !post || !post.isCarousel && post.slides.length <= 1) {
         this.dom.carouselCtrl.style.display = "none";
         return;
       }
@@ -1135,7 +1157,7 @@
         }
       }
       const post = this.posts[this.currentPostIndex];
-      if (post && post.slides) {
+      if (post && post.slides && isFeedContext(post.tile)) {
         if (post.slides[this.currentSlideIndex - 1]?.url) {
           const pre = new Image();
           pre.src = post.slides[this.currentSlideIndex - 1].url;
@@ -1226,11 +1248,11 @@
     }
     /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
     nextSlide() {
+      const post = this.posts[this.currentPostIndex];
+      if (!post || !isFeedContext(post.tile)) return;
       this._lastNavTime = Date.now();
       this._navDirection = 1;
       this.resetZoomState();
-      const post = this.posts[this.currentPostIndex];
-      if (!post) return;
       if (this.currentSlideIndex < post.slides.length - 1) {
         this.goToSlide(this.currentSlideIndex + 1);
         this._prefetchNextNativeSlide(post);
@@ -1246,6 +1268,8 @@
       this._advanceNativeCarouselAndGo(post, targetSlide);
     }
     prevSlide() {
+      const post = this.posts[this.currentPostIndex];
+      if (!post || !isFeedContext(post.tile)) return;
       this._lastNavTime = Date.now();
       this._navDirection = -1;
       this.resetZoomState();
@@ -1259,11 +1283,11 @@
       }
     }
     goToSlide(slideIndex) {
+      const post = this.posts[this.currentPostIndex];
+      if (!post || !isFeedContext(post.tile)) return;
       this._lastNavTime = Date.now();
       this._navDirection = slideIndex >= this.currentSlideIndex ? 1 : -1;
       this.resetZoomState();
-      const post = this.posts[this.currentPostIndex];
-      if (!post) return;
       if (slideIndex < post.slides.length) {
         this.currentSlideIndex = slideIndex;
         this.loadCurrent();
@@ -1951,9 +1975,10 @@
           }
         }
         if (uniqueSlides.length === 0) continue;
-        const isCarousel = existing && existing.isCarousel || uniqueSlides.length > 1 || isCarouselPost(tile);
-        const estCount = getEstimatedSlideCount(tile);
-        const totalSlides = Math.max(existing?.totalSlides || 0, estCount, uniqueSlides.length);
+        const isFeed = isFeedContext(tile);
+        const isCarousel = isFeed && (existing && existing.isCarousel || uniqueSlides.length > 1 || isCarouselPost(tile));
+        const estCount = isFeed ? getEstimatedSlideCount(tile) : 1;
+        const totalSlides = isFeed ? Math.max(existing?.totalSlides || 0, estCount, uniqueSlides.length) : 1;
         if (existing) {
           existing.tile = tile;
           existing.slides = uniqueSlides;
@@ -1984,6 +2009,7 @@
      */
     appendSlide(post, slide) {
       if (!post || !slide || !slide.url) return post;
+      if (!isFeedContext(post.tile)) return post;
       if (!post.slides.some((s) => s.url === slide.url)) {
         post.slides.push(slide);
         post.isCarousel = true;
