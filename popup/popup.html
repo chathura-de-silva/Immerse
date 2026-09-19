@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Immerse - Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" stroke-width="2"/>
+            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
+            <circle cx="17.5" cy="6.5" r="1.2" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Immerse</h1>
+          <span class="brand-sub">Instagram Ultra-HD</span>
+        </div>
+      </div>
+      <span class="version-tag">v1.0</span>
+    </header>
+
+    <!-- Master Toggle -->
+    <section class="card master-card">
+      <div class="card-info">
+        <span class="card-title">Extension Active</span>
+        <span class="card-desc">Enable high-res viewer & controls</span>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="toggle-enabled" checked>
+        <span class="slider"></span>
+      </label>
+    </section>
+
+    <!-- Trigger Mode Settings -->
+    <section class="card section-card">
+      <h2 class="section-title">Activation Trigger</h2>
+      <div class="segmented-control" id="trigger-mode-group">
+        <label class="segment">
+          <input type="radio" name="triggerMode" value="both" checked>
+          <span>Button + Click</span>
+        </label>
+        <label class="segment">
+          <input type="radio" name="triggerMode" value="button-only">
+          <span>Button Only</span>
+        </label>
+        <label class="segment">
+          <input type="radio" name="triggerMode" value="image-click">
+          <span>Click Only</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Preferences -->
+    <section class="card section-card">
+      <h2 class="section-title">Viewer Preferences</h2>
+      
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-name">Show Resolution Badge</span>
+          <span class="setting-hint">Displays dimensions (e.g. 1080×1350)</span>
+        </div>
+        <label class="toggle-switch small">
+          <input type="checkbox" id="toggle-badge" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-name">Mouse Wheel Zoom</span>
+          <span class="setting-hint">Zoom towards cursor in fullscreen</span>
+        </div>
+        <label class="toggle-switch small">
+          <input type="checkbox" id="toggle-zoom" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Shortcuts Guide -->
+    <section class="card shortcuts-card">
+      <h2 class="section-title">Keyboard Shortcuts</h2>
+      <div class="shortcut-list">
+        <div class="shortcut-item">
+          <kbd>Esc</kbd>
+          <span>Close viewer</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>F</kbd>
+          <span>Fullscreen</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>D</kbd>
+          <span>Download</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>←</kbd> <kbd>→</kbd>
+          <span>Carousel</span>
+        </div>
+        <div class="shortcut-item">
+          <kbd>0</kbd>
+          <span>Reset Zoom</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="popup-footer">
+      <span>Active on Instagram web</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
