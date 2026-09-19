@@ -14,16 +14,42 @@ import {
   getEstimatedSlideCount
 } from '../utils/dom-helpers.js';
 
+/**
+ * Resolves a unique persistent identifier for an Instagram post tile.
+ *
+ * @param {HTMLElement} tile
+ * @param {string} [fallbackUrl]
+ * @returns {string}
+ */
+function getPostIdentifier(tile, fallbackUrl = '') {
+  if (tile) {
+    const permalink = (tile.matches && tile.matches('a[href*="/p/"]'))
+      ? tile.getAttribute('href')
+      : (tile.querySelector ? tile.querySelector('a[href*="/p/"]')?.getAttribute('href') : null);
+    if (permalink) {
+      const match = permalink.match(/\/p\/([a-zA-Z0-9_-]+)/);
+      if (match) return `post_${match[1]}`;
+    }
+  }
+
+  if (fallbackUrl) {
+    const fileMatch = fallbackUrl.match(/\/([^\/?#]+)\.jpg/);
+    if (fileMatch) return `asset_${fileMatch[1]}`;
+    return `url_${fallbackUrl.slice(0, 100)}`;
+  }
+
+  return `tile_${Math.random().toString(36).slice(2, 9)}`;
+}
+
 export class GallerySequencer {
   constructor() {
-    this.posts = []; // Array of { id, postElement, tile, slides: [{ url, width, height, element }], isCarousel, totalSlides }
+    this.posts = []; // Array of { id, tile, slides: [{ url, width, height, element }], isCarousel, totalSlides }
     this.listeners = new Set();
   }
 
   /**
-   * Synchronizes and sorts all legitimate post tiles visible in the DOM
-   * in visual reading order (top-to-bottom, left-to-right).
-   * Preserves previously discovered slides across DOM unmounts.
+   * Synchronizes and accumulates legitimate post tiles in visual reading order.
+   * Preserves previously discovered posts and slides across Instagram's virtual list unmounts.
    *
    * @param {Array<{img: HTMLImageElement, container: HTMLElement}>} mediaEntries
    * @returns {Array<Object>}
@@ -31,9 +57,9 @@ export class GallerySequencer {
   syncSequence(mediaEntries) {
     if (!mediaEntries || mediaEntries.length === 0) return this.posts;
 
-    // Filter valid entries strictly inside post links or articles
+    // Filter valid entries strictly inside legitimate photo posts
     const validEntries = mediaEntries.filter(entry => {
-      return entry.img && document.body.contains(entry.img) && isLegitimatePostImage(entry.img);
+      return entry.img && isLegitimatePostImage(entry.img);
     });
 
     // Group images by their unique post container
@@ -44,15 +70,12 @@ export class GallerySequencer {
       if (!tile || !isLegitimatePhotoPost(tile)) continue;
 
       if (!postMap.has(tile)) {
-        postMap.set(tile, {
-          tile,
-          images: []
-        });
+        postMap.set(tile, { tile, images: [] });
       }
       postMap.get(tile).images.push(entry.img);
     }
 
-    // Sort post tiles by visual position on page
+    // Sort currently mounted post tiles by visual position on page (top-to-bottom, left-to-right)
     const sortedTiles = Array.from(postMap.values()).sort((a, b) => {
       const rectA = a.tile.getBoundingClientRect();
       const rectB = b.tile.getBoundingClientRect();
@@ -63,14 +86,22 @@ export class GallerySequencer {
       return (rectA.left + window.scrollX) - (rectB.left + window.scrollX);
     });
 
-    const newPosts = [];
+    let hasNewPosts = false;
 
-    sortedTiles.forEach((group, postIndex) => {
+    for (const group of sortedTiles) {
       const { tile } = group;
       const postImages = findPostImages(tile);
+      if (postImages.length === 0) continue;
 
-      // Check if we already have an existing post registered for this tile
-      const existing = this.posts.find(p => p.tile === tile);
+      const firstUrl = getHighestResolutionUrl(postImages[0]) || '';
+      const postId = getPostIdentifier(tile, firstUrl);
+
+      // Locate existing entry by DOM node, post ID, or slide URL overlap
+      let existing = this.posts.find(p => p.id === postId || p.tile === tile);
+      if (!existing && firstUrl) {
+        existing = this.posts.find(p => p.slides.some(s => s.url === firstUrl));
+      }
+
       const uniqueSlides = existing ? [...existing.slides] : [];
       const seenUrls = new Set(uniqueSlides.map(s => s.url));
 
@@ -87,23 +118,35 @@ export class GallerySequencer {
         }
       }
 
+      if (uniqueSlides.length === 0) continue;
+
       const isCarousel = (existing && existing.isCarousel) || uniqueSlides.length > 1 || isCarouselPost(tile);
       const estCount = getEstimatedSlideCount(tile);
       const totalSlides = Math.max(existing?.totalSlides || 0, estCount, uniqueSlides.length);
 
-      if (uniqueSlides.length > 0) {
-        newPosts.push({
-          id: existing?.id || `post-${postIndex}-${uniqueSlides[0].url.slice(-12)}`,
+      if (existing) {
+        // Update in-place without altering its established index in the sequence
+        existing.tile = tile;
+        existing.slides = uniqueSlides;
+        existing.isCarousel = isCarousel;
+        existing.totalSlides = totalSlides;
+      } else {
+        // Append newly discovered post to the sequence
+        this.posts.push({
+          id: postId,
           tile,
           slides: uniqueSlides,
           isCarousel,
           totalSlides
         });
+        hasNewPosts = true;
       }
-    });
+    }
 
-    this.posts = newPosts;
-    this._notify();
+    if (hasNewPosts) {
+      this._notify();
+    }
+
     return this.posts;
   }
 

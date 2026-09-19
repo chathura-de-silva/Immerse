@@ -28,10 +28,11 @@ class ImmerseApp {
     // Instantiate Gallery Sequencer for post and carousel slide organization
     this.sequencer = new GallerySequencer();
 
-    // Instantiate Lightbox Overlay with infinite feed loading hook
+    // Instantiate Lightbox Overlay with infinite feed loading hook and close callback
     this.overlay = new ViewerOverlay({
       ...settings,
-      onLoadMore: () => this.handleLoadMore()
+      onLoadMore: () => this.handleLoadMore(),
+      onClose: () => this.handleClose()
     });
 
     // Instantiate Hover Button Manager
@@ -101,6 +102,9 @@ class ImmerseApp {
     const settings = settingsStore.get();
     if (!settings.enabled) return;
 
+    // Preserve the user's current scroll position so we can restore it on close
+    this.savedScrollY = window.scrollY;
+
     // Synchronize all legitimate grid posts currently in DOM
     const posts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
 
@@ -111,6 +115,15 @@ class ImmerseApp {
       // Fallback for single post
       const items = this.mediaDetector.resolvePostMediaItems(targetImg, container);
       this.overlay.open([{ id: 'post-0', tile: container, slides: items }], 0, 0);
+    }
+  }
+
+  /**
+   * Restores user's scroll position when overlay closes, preventing feed jumps.
+   */
+  handleClose() {
+    if (typeof this.savedScrollY === 'number') {
+      window.scrollTo({ top: this.savedScrollY, behavior: 'instant' });
     }
   }
 
@@ -135,20 +148,28 @@ class ImmerseApp {
   }
 
   /**
-   * Triggers background scrolling on the underlying page so Instagram loads the next batch of grid posts.
+   * Safely nudges Instagram's native feed/grid infinite scroll to load the next batch of posts
+   * without jumping violently to the bottom of the page or causing virtual list disruptions.
    */
   handleLoadMore() {
-    const target = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
-    window.scrollTo({ top: target, behavior: 'instant' });
-    window.dispatchEvent(new Event('scroll'));
-    document.dispatchEvent(new Event('scroll'));
+    if (this._isLoadingMore) return;
+    this._isLoadingMore = true;
 
-    // Check main container if present
+    // Gently nudge scroll down by 1.2 viewports
+    const scrollStep = Math.round(window.innerHeight * 1.2);
+    window.scrollBy({ top: scrollStep, behavior: 'smooth' });
+    window.dispatchEvent(new Event('scroll', { bubbles: true }));
+
     const mainEl = document.querySelector('main') || document.querySelector('div[role="main"]');
     if (mainEl && mainEl.scrollHeight > mainEl.clientHeight) {
-      mainEl.scrollTop = mainEl.scrollHeight;
-      mainEl.dispatchEvent(new Event('scroll'));
+      mainEl.scrollBy({ top: scrollStep, behavior: 'smooth' });
+      mainEl.dispatchEvent(new Event('scroll', { bubbles: true }));
     }
+
+    // Cooldown prevents excessive scroll spam
+    setTimeout(() => {
+      this._isLoadingMore = false;
+    }, 1500);
   }
 }
 

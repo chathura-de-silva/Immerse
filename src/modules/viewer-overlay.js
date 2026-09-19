@@ -19,7 +19,10 @@ export class ViewerOverlay {
   constructor(options = {}) {
     this.options = options;
     this.onLoadMore = options.onLoadMore || null;
+    this.onClose = options.onClose || null;
     this.isOpen = false;
+    this._isTransitioning = false;
+    this._isLoading = false;
 
     // Posts & Slide state
     this.posts = []; // Array of { id, tile, slides: [{ url, width, height, element }] }
@@ -338,10 +341,19 @@ export class ViewerOverlay {
     }
 
     this.isOpen = false;
+    this._completeTransitionImmediately();
     this.resetTransform();
 
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
+    }
+
+    if (typeof this.onClose === 'function') {
+      try {
+        this.onClose();
+      } catch (err) {
+        console.warn('[Immerse] Error in onClose handler:', err);
+      }
     }
 
     setTimeout(() => {
@@ -373,6 +385,11 @@ export class ViewerOverlay {
 
     if (this._waitingForNextPost && this.posts.length > oldLength) {
       this._waitingForNextPost = false;
+      if (this._waitingTimeout) {
+        clearTimeout(this._waitingTimeout);
+        this._waitingTimeout = null;
+      }
+      this.dom.spinner.classList.remove('immerse-spinner-visible');
       this.goToPost(oldLength, 0);
     } else {
       this._updateHeaderCounter();
@@ -475,10 +492,9 @@ export class ViewerOverlay {
     const post = this.posts[this.currentPostIndex];
     if (!post || !post.slides || post.slides.length === 0) return;
 
-    if (this._transitionTimeout) {
-      clearTimeout(this._transitionTimeout);
-      this._transitionTimeout = null;
-    }
+    // Immediately resolve any pending transition to settled state
+    this._completeTransitionImmediately();
+
     if (this._spinnerTimeout) {
       clearTimeout(this._spinnerTimeout);
       this._spinnerTimeout = null;
@@ -488,8 +504,8 @@ export class ViewerOverlay {
     this.currentSlideIndex = Math.max(0, Math.min(this.currentSlideIndex, post.slides.length - 1));
     const slide = post.slides[this.currentSlideIndex];
 
-    // Proactively trigger background loading when approaching the end of loaded posts
-    if (this.currentPostIndex >= this.posts.length - 3 && this.onLoadMore) {
+    // Only proactively request more posts when directly on the very last loaded post
+    if (this.currentPostIndex >= this.posts.length - 1 && this.onLoadMore) {
       this.onLoadMore();
     }
 
@@ -505,30 +521,32 @@ export class ViewerOverlay {
 
     const targetPostIndex = this.currentPostIndex;
     const targetSlideIndex = this.currentSlideIndex;
+    this._isLoading = true;
 
     // Buffer previous image to eliminate black blinks and provide seamless transitions
     if (this.dom.img.src && this.dom.img.style.display !== 'none' && this.dom.img.style.opacity !== '0') {
       this.dom.imgPrev.src = this.dom.img.src;
       this.dom.imgPrev.style.display = 'block';
-      this.dom.imgPrev.style.opacity = '1';
+      this.dom.imgPrev.style.opacity = '0.75'; // Softly dim previous image to indicate incoming load
       this.dom.imgPrev.style.transform = 'translate3d(0, 0, 0) scale(1)';
-      this.dom.imgPrev.style.transition = 'none';
+      this.dom.imgPrev.style.transition = 'opacity 0.2s ease';
     } else if (this.dom.imgPrev.src) {
       this.dom.imgPrev.style.display = 'block';
-      this.dom.imgPrev.style.opacity = '1';
+      this.dom.imgPrev.style.opacity = '0.75';
     }
 
     // Hide incoming layer until decoded (prevImg remains visible underneath)
     this.dom.img.style.opacity = '0';
 
-    // Show spinner ONLY if image takes > 220ms to load (avoids flicker for cached/preloaded images)
-    if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
+    // Show loading spinner quickly if image is not already in memory cache (80ms threshold)
     this._spinnerTimeout = setTimeout(() => {
-      if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+      if (this._isLoading && this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
         this.dom.spinner.classList.add('immerse-spinner-visible');
-        this._updateBadgeText('Loading Ultra-HD...');
+        if (this.options.showResolutionBadge) {
+          this._updateBadgeText('Loading HD...');
+        }
       }
-    }, 220);
+    }, 80);
 
     const tempImg = new Image();
 
@@ -539,6 +557,8 @@ export class ViewerOverlay {
         clearTimeout(this._spinnerTimeout);
         this._spinnerTimeout = null;
       }
+      this._isLoading = false;
+      this.dom.spinner.classList.remove('immerse-spinner-visible');
 
       // Ensure bitmap is fully decoded in memory before swapping
       if (tempImg.decode) {
@@ -555,27 +575,25 @@ export class ViewerOverlay {
       const isSlide = this.options.transitionStyle === 'slide';
 
       if (hasPrev) {
-        let incomingStartTransform = '';
+        this._isTransitioning = true;
+        let incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
         let outgoingEndTransform = '';
-        let outgoingEndOpacity = '1';
+        let outgoingEndOpacity = '0';
         let easing = '';
         let duration = '';
 
         if (isSlide) {
-          // Option B: Continuous 100% Horizontal Slide (Filmstrip)
-          incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
+          // Continuous 100% Horizontal Slide (Filmstrip)
           outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0)`;
           outgoingEndOpacity = '1';
           easing = 'cubic-bezier(0.2, 0, 0, 1)';
           duration = '0.34s';
         } else {
-          // Option A: True Depth Parallax Slide
-          // BOTH images are on screen simultaneously throughout the entire slide motion!
-          // Incoming slide glides from 100% edge at full opacity
-          // Outgoing slide recedes into the background at 38% parallax speed with subtle depth scale & dim
-          incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
-          outgoingEndTransform = `translate3d(${-dir * 38}%, 0, 0) scale(0.93)`;
-          outgoingEndOpacity = '0.4';
+          // Authentic Depth Parallax Slide:
+          // Incoming slide sweeps in from edge to center
+          // Outgoing slide moves completely off-screen (-100%) while receding into depth (scale 0.92) and smoothly fading to 0
+          outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0) scale(0.92)`;
+          outgoingEndOpacity = '0';
           easing = 'cubic-bezier(0.16, 1, 0.3, 1)';
           duration = '0.35s';
         }
@@ -596,12 +614,25 @@ export class ViewerOverlay {
 
         requestAnimationFrame(() => {
           this.dom.img.style.transition = `transform ${duration} ${easing}`;
-          this.dom.imgPrev.style.transition = `transform ${duration} ${easing}, opacity ${duration} ease`;
+          this.dom.imgPrev.style.transition = isSlide
+            ? `transform ${duration} ${easing}`
+            : `transform ${duration} ${easing}, opacity ${duration} ${easing}`;
 
           this.dom.img.style.transform = 'translate3d(0, 0, 0)';
           this.dom.imgPrev.style.transform = outgoingEndTransform;
           this.dom.imgPrev.style.opacity = outgoingEndOpacity;
         });
+
+        // Cleanup previous image layer after transition finishes
+        this._transitionTimeout = setTimeout(() => {
+          if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+            this.dom.imgPrev.style.display = 'none';
+            this.dom.imgPrev.style.transform = 'none';
+            this.dom.imgPrev.style.opacity = '0';
+            this.dom.img.style.transition = 'opacity 0.28s var(--immerse-smooth)';
+            this._isTransitioning = false;
+          }
+        }, 360);
       } else {
         // Initial load: fade in center
         this.dom.img.style.transition = 'opacity 0.28s var(--immerse-smooth)';
@@ -611,22 +642,9 @@ export class ViewerOverlay {
         });
       }
 
-      this.dom.spinner.classList.remove('immerse-spinner-visible');
-
       const w = tempImg.naturalWidth;
       const h = tempImg.naturalHeight;
       this._updateBadgeText(`${w} × ${h} • Highest Quality`);
-
-      // Cleanup previous image layer after transition finishes
-      this._transitionTimeout = setTimeout(() => {
-        if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
-          this.dom.imgPrev.style.display = 'none';
-          this.dom.imgPrev.style.transform = 'none';
-          this.dom.imgPrev.style.opacity = '0';
-          this.dom.img.style.transition = 'opacity 0.28s var(--immerse-smooth)';
-        }
-      }, 360);
-
       this._preloadAdjacent();
     };
 
@@ -634,10 +652,13 @@ export class ViewerOverlay {
     tempImg.onerror = () => {
       if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
       if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
+      this._isLoading = false;
+      this._isTransitioning = false;
       this.dom.spinner.classList.remove('immerse-spinner-visible');
       this.dom.img.src = slide.url;
       this.dom.img.style.opacity = '1';
       this.dom.imgPrev.style.opacity = '0';
+      this.dom.imgPrev.style.display = 'none';
       this._updateBadgeText('HD Ready');
     };
 
@@ -744,9 +765,16 @@ export class ViewerOverlay {
     if (this.currentPostIndex < this.posts.length - 1) {
       this.goToPost(this.currentPostIndex + 1, 0);
     } else if (this.onLoadMore) {
-      this._updateCounterText(`Photo ${this.currentPostIndex + 1} • Loading...`);
       this._waitingForNextPost = true;
+      this.dom.spinner.classList.add('immerse-spinner-visible');
       this.onLoadMore();
+      if (this._waitingTimeout) clearTimeout(this._waitingTimeout);
+      this._waitingTimeout = setTimeout(() => {
+        if (this._waitingForNextPost) {
+          this._waitingForNextPost = false;
+          this.dom.spinner.classList.remove('immerse-spinner-visible');
+        }
+      }, 4000);
     }
   }
 
@@ -848,6 +876,28 @@ export class ViewerOverlay {
         this._updateCarouselControls(post);
       }, 80);
     }
+  }
+
+  /**
+   * Instantly settles any running slide transition to prevent intermediate visual tearing or glitches.
+   */
+  _completeTransitionImmediately() {
+    if (this._transitionTimeout) {
+      clearTimeout(this._transitionTimeout);
+      this._transitionTimeout = null;
+    }
+    if (this.dom?.imgPrev) {
+      this.dom.imgPrev.style.transition = 'none';
+      this.dom.imgPrev.style.display = 'none';
+      this.dom.imgPrev.style.transform = 'none';
+      this.dom.imgPrev.style.opacity = '0';
+    }
+    if (this.dom?.img) {
+      this.dom.img.style.transition = 'none';
+      this.dom.img.style.transform = 'translate3d(0, 0, 0)';
+      this.dom.img.style.opacity = '1';
+    }
+    this._isTransitioning = false;
   }
 
   /* ---------------- Zoom & Pan Transforms ---------------- */

@@ -113,11 +113,10 @@ export class MediaDetector {
   }
 
   /**
-   * Returns all currently detected media entries that are connected to the DOM.
+   * Returns all currently detected legitimate media entries.
    * @returns {Array<{img: HTMLImageElement, container: HTMLElement}>}
    */
   getMediaEntries() {
-    this.mediaEntries = this.mediaEntries.filter(e => e.img && document.body.contains(e.img));
     return this.mediaEntries;
   }
 

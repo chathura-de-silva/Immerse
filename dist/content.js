@@ -463,7 +463,10 @@
     constructor(options = {}) {
       this.options = options;
       this.onLoadMore = options.onLoadMore || null;
+      this.onClose = options.onClose || null;
       this.isOpen = false;
+      this._isTransitioning = false;
+      this._isLoading = false;
       this.posts = [];
       this.currentPostIndex = 0;
       this.currentSlideIndex = 0;
@@ -742,10 +745,18 @@
         this._counterTextTimeout = null;
       }
       this.isOpen = false;
+      this._completeTransitionImmediately();
       this.resetTransform();
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {
         });
+      }
+      if (typeof this.onClose === "function") {
+        try {
+          this.onClose();
+        } catch (err) {
+          console.warn("[Immerse] Error in onClose handler:", err);
+        }
       }
       setTimeout(() => {
         if (!this.isOpen && this.dom?.root.parentElement) {
@@ -771,6 +782,11 @@
       this.posts = newPosts;
       if (this._waitingForNextPost && this.posts.length > oldLength) {
         this._waitingForNextPost = false;
+        if (this._waitingTimeout) {
+          clearTimeout(this._waitingTimeout);
+          this._waitingTimeout = null;
+        }
+        this.dom.spinner.classList.remove("immerse-spinner-visible");
         this.goToPost(oldLength, 0);
       } else {
         this._updateHeaderCounter();
@@ -859,10 +875,7 @@
     loadCurrent() {
       const post = this.posts[this.currentPostIndex];
       if (!post || !post.slides || post.slides.length === 0) return;
-      if (this._transitionTimeout) {
-        clearTimeout(this._transitionTimeout);
-        this._transitionTimeout = null;
-      }
+      this._completeTransitionImmediately();
       if (this._spinnerTimeout) {
         clearTimeout(this._spinnerTimeout);
         this._spinnerTimeout = null;
@@ -870,7 +883,7 @@
       this._syncPostSlides(post);
       this.currentSlideIndex = Math.max(0, Math.min(this.currentSlideIndex, post.slides.length - 1));
       const slide = post.slides[this.currentSlideIndex];
-      if (this.currentPostIndex >= this.posts.length - 3 && this.onLoadMore) {
+      if (this.currentPostIndex >= this.posts.length - 1 && this.onLoadMore) {
         this.onLoadMore();
       }
       this.resetZoomState();
@@ -882,24 +895,26 @@
       }
       const targetPostIndex = this.currentPostIndex;
       const targetSlideIndex = this.currentSlideIndex;
+      this._isLoading = true;
       if (this.dom.img.src && this.dom.img.style.display !== "none" && this.dom.img.style.opacity !== "0") {
         this.dom.imgPrev.src = this.dom.img.src;
         this.dom.imgPrev.style.display = "block";
-        this.dom.imgPrev.style.opacity = "1";
+        this.dom.imgPrev.style.opacity = "0.75";
         this.dom.imgPrev.style.transform = "translate3d(0, 0, 0) scale(1)";
-        this.dom.imgPrev.style.transition = "none";
+        this.dom.imgPrev.style.transition = "opacity 0.2s ease";
       } else if (this.dom.imgPrev.src) {
         this.dom.imgPrev.style.display = "block";
-        this.dom.imgPrev.style.opacity = "1";
+        this.dom.imgPrev.style.opacity = "0.75";
       }
       this.dom.img.style.opacity = "0";
-      if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
       this._spinnerTimeout = setTimeout(() => {
-        if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+        if (this._isLoading && this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
           this.dom.spinner.classList.add("immerse-spinner-visible");
-          this._updateBadgeText("Loading Ultra-HD...");
+          if (this.options.showResolutionBadge) {
+            this._updateBadgeText("Loading HD...");
+          }
         }
-      }, 220);
+      }, 80);
       const tempImg = new Image();
       const onReady = async () => {
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
@@ -907,6 +922,8 @@
           clearTimeout(this._spinnerTimeout);
           this._spinnerTimeout = null;
         }
+        this._isLoading = false;
+        this.dom.spinner.classList.remove("immerse-spinner-visible");
         if (tempImg.decode) {
           await tempImg.decode().catch(() => {
           });
@@ -917,21 +934,20 @@
         const dir = this._navDirection || 1;
         const isSlide = this.options.transitionStyle === "slide";
         if (hasPrev) {
-          let incomingStartTransform = "";
+          this._isTransitioning = true;
+          let incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
           let outgoingEndTransform = "";
-          let outgoingEndOpacity = "1";
+          let outgoingEndOpacity = "0";
           let easing = "";
           let duration = "";
           if (isSlide) {
-            incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
             outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0)`;
             outgoingEndOpacity = "1";
             easing = "cubic-bezier(0.2, 0, 0, 1)";
             duration = "0.34s";
           } else {
-            incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
-            outgoingEndTransform = `translate3d(${-dir * 38}%, 0, 0) scale(0.93)`;
-            outgoingEndOpacity = "0.4";
+            outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0) scale(0.92)`;
+            outgoingEndOpacity = "0";
             easing = "cubic-bezier(0.16, 1, 0.3, 1)";
             duration = "0.35s";
           }
@@ -946,11 +962,20 @@
           void this.dom.img.offsetWidth;
           requestAnimationFrame(() => {
             this.dom.img.style.transition = `transform ${duration} ${easing}`;
-            this.dom.imgPrev.style.transition = `transform ${duration} ${easing}, opacity ${duration} ease`;
+            this.dom.imgPrev.style.transition = isSlide ? `transform ${duration} ${easing}` : `transform ${duration} ${easing}, opacity ${duration} ${easing}`;
             this.dom.img.style.transform = "translate3d(0, 0, 0)";
             this.dom.imgPrev.style.transform = outgoingEndTransform;
             this.dom.imgPrev.style.opacity = outgoingEndOpacity;
           });
+          this._transitionTimeout = setTimeout(() => {
+            if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+              this.dom.imgPrev.style.display = "none";
+              this.dom.imgPrev.style.transform = "none";
+              this.dom.imgPrev.style.opacity = "0";
+              this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
+              this._isTransitioning = false;
+            }
+          }, 360);
         } else {
           this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
           this.dom.img.style.transform = "translate3d(0, 0, 0)";
@@ -958,28 +983,22 @@
             this.dom.img.style.opacity = "1";
           });
         }
-        this.dom.spinner.classList.remove("immerse-spinner-visible");
         const w = tempImg.naturalWidth;
         const h = tempImg.naturalHeight;
         this._updateBadgeText(`${w} \xD7 ${h} \u2022 Highest Quality`);
-        this._transitionTimeout = setTimeout(() => {
-          if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
-            this.dom.imgPrev.style.display = "none";
-            this.dom.imgPrev.style.transform = "none";
-            this.dom.imgPrev.style.opacity = "0";
-            this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
-          }
-        }, 360);
         this._preloadAdjacent();
       };
       tempImg.onload = onReady;
       tempImg.onerror = () => {
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
         if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
+        this._isLoading = false;
+        this._isTransitioning = false;
         this.dom.spinner.classList.remove("immerse-spinner-visible");
         this.dom.img.src = slide.url;
         this.dom.img.style.opacity = "1";
         this.dom.imgPrev.style.opacity = "0";
+        this.dom.imgPrev.style.display = "none";
         this._updateBadgeText("HD Ready");
       };
       tempImg.src = slide.url;
@@ -1063,9 +1082,16 @@
       if (this.currentPostIndex < this.posts.length - 1) {
         this.goToPost(this.currentPostIndex + 1, 0);
       } else if (this.onLoadMore) {
-        this._updateCounterText(`Photo ${this.currentPostIndex + 1} \u2022 Loading...`);
         this._waitingForNextPost = true;
+        this.dom.spinner.classList.add("immerse-spinner-visible");
         this.onLoadMore();
+        if (this._waitingTimeout) clearTimeout(this._waitingTimeout);
+        this._waitingTimeout = setTimeout(() => {
+          if (this._waitingForNextPost) {
+            this._waitingForNextPost = false;
+            this.dom.spinner.classList.remove("immerse-spinner-visible");
+          }
+        }, 4e3);
       }
     }
     prevPost() {
@@ -1151,6 +1177,27 @@
           this._updateCarouselControls(post);
         }, 80);
       }
+    }
+    /**
+     * Instantly settles any running slide transition to prevent intermediate visual tearing or glitches.
+     */
+    _completeTransitionImmediately() {
+      if (this._transitionTimeout) {
+        clearTimeout(this._transitionTimeout);
+        this._transitionTimeout = null;
+      }
+      if (this.dom?.imgPrev) {
+        this.dom.imgPrev.style.transition = "none";
+        this.dom.imgPrev.style.display = "none";
+        this.dom.imgPrev.style.transform = "none";
+        this.dom.imgPrev.style.opacity = "0";
+      }
+      if (this.dom?.img) {
+        this.dom.img.style.transition = "none";
+        this.dom.img.style.transform = "translate3d(0, 0, 0)";
+        this.dom.img.style.opacity = "1";
+      }
+      this._isTransitioning = false;
     }
     /* ---------------- Zoom & Pan Transforms ---------------- */
     resetZoomState() {
@@ -1618,11 +1665,10 @@
       }
     }
     /**
-     * Returns all currently detected media entries that are connected to the DOM.
+     * Returns all currently detected legitimate media entries.
      * @returns {Array<{img: HTMLImageElement, container: HTMLElement}>}
      */
     getMediaEntries() {
-      this.mediaEntries = this.mediaEntries.filter((e) => e.img && document.body.contains(e.img));
       return this.mediaEntries;
     }
     /**
@@ -1660,15 +1706,29 @@
   };
 
   // src/modules/gallery-sequencer.js
+  function getPostIdentifier(tile, fallbackUrl = "") {
+    if (tile) {
+      const permalink = tile.matches && tile.matches('a[href*="/p/"]') ? tile.getAttribute("href") : tile.querySelector ? tile.querySelector('a[href*="/p/"]')?.getAttribute("href") : null;
+      if (permalink) {
+        const match = permalink.match(/\/p\/([a-zA-Z0-9_-]+)/);
+        if (match) return `post_${match[1]}`;
+      }
+    }
+    if (fallbackUrl) {
+      const fileMatch = fallbackUrl.match(/\/([^\/?#]+)\.jpg/);
+      if (fileMatch) return `asset_${fileMatch[1]}`;
+      return `url_${fallbackUrl.slice(0, 100)}`;
+    }
+    return `tile_${Math.random().toString(36).slice(2, 9)}`;
+  }
   var GallerySequencer = class {
     constructor() {
       this.posts = [];
       this.listeners = /* @__PURE__ */ new Set();
     }
     /**
-     * Synchronizes and sorts all legitimate post tiles visible in the DOM
-     * in visual reading order (top-to-bottom, left-to-right).
-     * Preserves previously discovered slides across DOM unmounts.
+     * Synchronizes and accumulates legitimate post tiles in visual reading order.
+     * Preserves previously discovered posts and slides across Instagram's virtual list unmounts.
      *
      * @param {Array<{img: HTMLImageElement, container: HTMLElement}>} mediaEntries
      * @returns {Array<Object>}
@@ -1676,17 +1736,14 @@
     syncSequence(mediaEntries) {
       if (!mediaEntries || mediaEntries.length === 0) return this.posts;
       const validEntries = mediaEntries.filter((entry) => {
-        return entry.img && document.body.contains(entry.img) && isLegitimatePostImage(entry.img);
+        return entry.img && isLegitimatePostImage(entry.img);
       });
       const postMap = /* @__PURE__ */ new Map();
       for (const entry of validEntries) {
         const tile = entry.container || findClosestPost(entry.img);
         if (!tile || !isLegitimatePhotoPost(tile)) continue;
         if (!postMap.has(tile)) {
-          postMap.set(tile, {
-            tile,
-            images: []
-          });
+          postMap.set(tile, { tile, images: [] });
         }
         postMap.get(tile).images.push(entry.img);
       }
@@ -1699,11 +1756,17 @@
         }
         return rectA.left + window.scrollX - (rectB.left + window.scrollX);
       });
-      const newPosts = [];
-      sortedTiles.forEach((group, postIndex) => {
+      let hasNewPosts = false;
+      for (const group of sortedTiles) {
         const { tile } = group;
         const postImages = findPostImages(tile);
-        const existing = this.posts.find((p) => p.tile === tile);
+        if (postImages.length === 0) continue;
+        const firstUrl = getHighestResolutionUrl(postImages[0]) || "";
+        const postId = getPostIdentifier(tile, firstUrl);
+        let existing = this.posts.find((p) => p.id === postId || p.tile === tile);
+        if (!existing && firstUrl) {
+          existing = this.posts.find((p) => p.slides.some((s) => s.url === firstUrl));
+        }
         const uniqueSlides = existing ? [...existing.slides] : [];
         const seenUrls = new Set(uniqueSlides.map((s) => s.url));
         for (const imgEl of postImages) {
@@ -1718,21 +1781,29 @@
             });
           }
         }
+        if (uniqueSlides.length === 0) continue;
         const isCarousel = existing && existing.isCarousel || uniqueSlides.length > 1 || isCarouselPost(tile);
         const estCount = getEstimatedSlideCount(tile);
         const totalSlides = Math.max(existing?.totalSlides || 0, estCount, uniqueSlides.length);
-        if (uniqueSlides.length > 0) {
-          newPosts.push({
-            id: existing?.id || `post-${postIndex}-${uniqueSlides[0].url.slice(-12)}`,
+        if (existing) {
+          existing.tile = tile;
+          existing.slides = uniqueSlides;
+          existing.isCarousel = isCarousel;
+          existing.totalSlides = totalSlides;
+        } else {
+          this.posts.push({
+            id: postId,
             tile,
             slides: uniqueSlides,
             isCarousel,
             totalSlides
           });
+          hasNewPosts = true;
         }
-      });
-      this.posts = newPosts;
-      this._notify();
+      }
+      if (hasNewPosts) {
+        this._notify();
+      }
       return this.posts;
     }
     /**
@@ -1814,7 +1885,8 @@
       this.sequencer = new GallerySequencer();
       this.overlay = new ViewerOverlay({
         ...settings,
-        onLoadMore: () => this.handleLoadMore()
+        onLoadMore: () => this.handleLoadMore(),
+        onClose: () => this.handleClose()
       });
       this.hoverButtons = new HoverButtonManager({
         onTrigger: (img, container) => this.handleTrigger(img, container),
@@ -1869,6 +1941,7 @@
     handleTrigger(targetImg, container) {
       const settings = settingsStore.get();
       if (!settings.enabled) return;
+      this.savedScrollY = window.scrollY;
       const posts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
       if (posts.length > 0) {
         const { postIndex, slideIndex } = this.sequencer.findLocation(targetImg);
@@ -1876,6 +1949,14 @@
       } else {
         const items = this.mediaDetector.resolvePostMediaItems(targetImg, container);
         this.overlay.open([{ id: "post-0", tile: container, slides: items }], 0, 0);
+      }
+    }
+    /**
+     * Restores user's scroll position when overlay closes, preventing feed jumps.
+     */
+    handleClose() {
+      if (typeof this.savedScrollY === "number") {
+        window.scrollTo({ top: this.savedScrollY, behavior: "instant" });
       }
     }
     handleSettingsChange(newSettings) {
@@ -1895,18 +1976,23 @@
       }
     }
     /**
-     * Triggers background scrolling on the underlying page so Instagram loads the next batch of grid posts.
+     * Safely nudges Instagram's native feed/grid infinite scroll to load the next batch of posts
+     * without jumping violently to the bottom of the page or causing virtual list disruptions.
      */
     handleLoadMore() {
-      const target = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
-      window.scrollTo({ top: target, behavior: "instant" });
-      window.dispatchEvent(new Event("scroll"));
-      document.dispatchEvent(new Event("scroll"));
+      if (this._isLoadingMore) return;
+      this._isLoadingMore = true;
+      const scrollStep = Math.round(window.innerHeight * 1.2);
+      window.scrollBy({ top: scrollStep, behavior: "smooth" });
+      window.dispatchEvent(new Event("scroll", { bubbles: true }));
       const mainEl = document.querySelector("main") || document.querySelector('div[role="main"]');
       if (mainEl && mainEl.scrollHeight > mainEl.clientHeight) {
-        mainEl.scrollTop = mainEl.scrollHeight;
-        mainEl.dispatchEvent(new Event("scroll"));
+        mainEl.scrollBy({ top: scrollStep, behavior: "smooth" });
+        mainEl.dispatchEvent(new Event("scroll", { bubbles: true }));
       }
+      setTimeout(() => {
+        this._isLoadingMore = false;
+      }, 1500);
     }
   };
   var app = new ImmerseApp();
