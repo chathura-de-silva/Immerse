@@ -1,0 +1,98 @@
+# Immerse — Instagram High-Res Fullscreen Viewer
+
+A lightweight, non-intrusive browser extension (Manifest V3) that simulates large-screen viewing on Instagram by extracting the highest possible resolution images (`srcset` 1080p+ candidates) and presenting them in an intuitive, distraction-free fullscreen lightbox.
+
+---
+
+## ✨ Features
+
+- **Non-Intrusive Integration**: Preserves Instagram's native feed layout, styling, and functionality without forced page reflows.
+- **Glassmorphic Hover Button**: A subtle, semi-transparent `HD` button smoothly appears when hovering over photos in the feed, profile grids, carousels, and Explore page, and disappears when not in use.
+- **Max-Resolution Engine**: Parses complex `srcset` attributes and Instagram CDN URLs to load the highest available resolution image asset instead of the downscaled feed thumbnail.
+- **Intuitive Fullscreen Lightbox**:
+  - **Pan & Zoom**: Smooth mouse wheel zooming anchored to the cursor position (0.5× to 6×) and grab-to-pan when zoomed in.
+  - **Double Click**: Quick toggle between 100% fit and 2.5× zoom.
+  - **Multi-Photo Carousels**: Seamless navigation through all photos of a carousel post with prev/next buttons or keyboard arrow keys.
+  - **Resolution Badge**: Live readout of the loaded image's actual pixel dimensions (e.g. `1080 × 1350 • Highest Quality`).
+  - **Direct Download**: One-click download button (`D`) to save the original high-resolution JPEG directly.
+  - **True Fullscreen**: Toggle native browser fullscreen (`F`).
+- **Customizable Settings Popup**: Toggle features, select trigger behavior (Button + Click, Button Only, or Click Only), and adjust preferences.
+
+---
+
+## ⌨️ Keyboard Shortcuts (in Fullscreen View)
+
+| Key | Action |
+| --- | --- |
+| `Esc` | Close fullscreen viewer |
+| `F` | Toggle true fullscreen mode |
+| `D` | Download current high-resolution image |
+| `←` / `→` | Previous / Next carousel photo |
+| `0` | Reset zoom and pan |
+| `+` / `-` | Zoom in / Zoom out |
+| `Scroll` | Smooth zoom towards mouse pointer |
+| `Drag` | Pan around zoomed image |
+| `Double Click` | Toggle 100% fit / 2.5× zoom |
+
+---
+
+## 🏗️ Architecture & Separation of Concerns
+
+```
+D:/Immerse/
+├── manifest.json              # Manifest V3 configuration & permissions
+├── package.json               # Node.js project manifest & scripts
+├── icons/                     # Extension icons (16px, 48px, 128px)
+├── popup/
+│   ├── popup.html             # Extension settings modal markup
+│   ├── popup.css              # Dark-mode settings styling
+│   └── popup.js               # Settings sync & chrome.storage communication
+├── src/
+│   ├── content.js             # Main orchestrator (ties modules together)
+│   ├── utils/
+│   │   ├── srcset-parser.js   # Pure parser for srcset & Instagram CDN candidates
+│   │   └── dom-helpers.js     # DOM creation, batching & tree traversal
+│   ├── modules/
+│   │   ├── settings-store.js  # Reactive settings store backed by chrome.storage
+│   │   ├── viewer-overlay.js  # Fullscreen lightbox overlay component (pan/zoom/controls)
+│   │   ├── hover-button.js    # Non-intrusive floating HD button manager
+│   │   └── media-detector.js  # Batched MutationObserver for feed, grid, & carousels
+│   └── styles/
+│       ├── overlay.css        # Lightbox backdrop blur & control styles
+│       └── hover-button.css   # Translucent hover button styles
+├── dist/                      # Ready-to-load bundled assets
+│   ├── content.js             # Bundled content script
+│   └── content.css            # Bundled styles
+├── tests/
+│   └── srcset-parser.test.js  # Unit tests using Node test runner
+└── scripts/
+    ├── build.js               # Bundler script
+    └── generate-icons.js      # Icon generator script
+```
+
+---
+
+## 🚀 How to Install in Chrome / Edge / Brave
+
+1. Open your browser and navigate to `chrome://extensions` (or `edge://extensions`).
+2. Toggle on **Developer mode** in the top right corner.
+3. Click **Load unpacked**.
+4. Select the `D:\Immerse` folder.
+5. Navigate to [Instagram](https://www.instagram.com) and hover over any post to see the `HD` button appear!
+
+---
+
+## 🧪 Development & Testing
+
+- **Run unit tests**:
+  ```bash
+  node --test tests/srcset-parser.test.js
+  ```
+- **Rebuild bundle**:
+  ```bash
+  node scripts/build.js
+  ```
+- **Regenerate icons**:
+  ```bash
+  node scripts/generate-icons.js
+  ```
