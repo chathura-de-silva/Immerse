@@ -46,9 +46,12 @@
   -webkit-backdrop-filter: blur(28px) saturate(180%);
 }
 
-/* Header bar */
+/* Header bar - Floats over the stage without consuming vertical flow space */
 .immerse-header {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 20;
   display: flex;
   align-items: center;
@@ -56,7 +59,8 @@
   width: 100%;
   box-sizing: border-box;
   padding: 16px 28px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+  background: transparent;
+  pointer-events: none; /* Empty space in header allows clicks/drags to reach the stage */
   transition: opacity 0.35s var(--immerse-smooth), transform 0.35s var(--immerse-smooth);
 }
 
@@ -64,6 +68,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  pointer-events: auto;
 }
 
 /* Auto-hide cursor when completely idle */
@@ -170,6 +175,7 @@
   gap: 10px;
   margin-left: auto;
   flex-shrink: 0;
+  pointer-events: auto;
 }
 
 .immerse-btn {
@@ -209,11 +215,17 @@
   color: #ff4757;
 }
 
-/* Stage Viewport */
+.immerse-btn-view-post:hover {
+  background: rgba(0, 149, 246, 0.22);
+  border-color: rgba(0, 149, 246, 0.45);
+  color: #8ed0ff;
+}
+
+/* Stage Viewport - Spans the full viewport */
 .immerse-stage {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 5;
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -238,9 +250,9 @@
   grid-template-rows: minmax(0, 1fr);
   width: 100%;
   height: 100%;
-  padding: 24px 72px 80px 72px; /* Bottom padding keeps room for carousel controller */
+  padding: 70px 72px 80px 72px; /* Unzoomed framing: keeps comfortable room below header and above carousel */
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible; /* Allows zoomed and panned image to reach viewport edges without clipping at header */
 }
 
 .immerse-image {

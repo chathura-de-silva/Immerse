@@ -116,6 +116,14 @@ export class ViewerOverlay {
     // Header controls group
     const controls = createElement('div', { className: 'immerse-controls' });
 
+    // View post button (opens native Instagram post in a new tab)
+    const viewPostBtn = createElement('button', {
+      className: 'immerse-btn immerse-btn-view-post',
+      innerHTML: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+      attributes: { title: 'View Post on Instagram (V)', 'aria-label': 'View Post on Instagram' },
+      events: { click: () => this.openPostOnInstagram() }
+    });
+
     // Zoom reset button
     const zoomResetBtn = createElement('button', {
       className: 'immerse-btn immerse-btn-zoom',
@@ -140,7 +148,7 @@ export class ViewerOverlay {
       events: { click: () => this.close() }
     });
 
-    controls.append(zoomResetBtn, fullscreenBtn, closeBtn);
+    controls.append(viewPostBtn, zoomResetBtn, fullscreenBtn, closeBtn);
     header.append(headerLeft, controls);
 
     // Stage area
@@ -254,6 +262,7 @@ export class ViewerOverlay {
       badgeText,
       counter,
       counterText,
+      viewPostBtn,
       zoomResetBtn,
       fullscreenBtn,
       closeBtn,
@@ -760,9 +769,53 @@ export class ViewerOverlay {
       this._updateCounterText(`Photo ${currentPostNum}`);
     }
 
+    if (this.dom?.viewPostBtn) {
+      const url = this.getCurrentPostUrl();
+      this.dom.viewPostBtn.style.display = url ? 'inline-flex' : 'none';
+    }
+
     this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
     // Keep next button clickable so user can trigger load-more at the end
     this.dom.nextPostBtn.disabled = false;
+  }
+
+  /**
+   * Resolves the Instagram permalink URL for the currently active post.
+   *
+   * @returns {string|null}
+   */
+  getCurrentPostUrl() {
+    const post = this.posts[this.currentPostIndex];
+    if (!post) return null;
+
+    const tile = post.tile;
+    if (tile) {
+      const link = (tile.matches && tile.matches('a[href*="/p/"], a[href*="/reel/"]'))
+        ? tile.getAttribute('href')
+        : (tile.querySelector ? tile.querySelector('a[href*="/p/"], a[href*="/reel/"]')?.getAttribute('href') : null)
+          || (tile.closest ? tile.closest('a[href*="/p/"], a[href*="/reel/"]')?.getAttribute('href') : null);
+      if (link) {
+        if (link.startsWith('http')) return link;
+        return `https://www.instagram.com${link.startsWith('/') ? '' : '/'}${link}`;
+      }
+    }
+
+    if (post.id && typeof post.id === 'string' && post.id.startsWith('post_')) {
+      const code = post.id.slice(5);
+      return `https://www.instagram.com/p/${code}/`;
+    }
+
+    return null;
+  }
+
+  /**
+   * Opens the currently active post's native Instagram permalink in a new browser tab.
+   */
+  openPostOnInstagram() {
+    const url = this.getCurrentPostUrl();
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
   }
 
   _updateCarouselControls(post) {
@@ -1230,6 +1283,11 @@ export class ViewerOverlay {
       case 'F':
         e.preventDefault();
         this.toggleNativeFullscreen();
+        break;
+      case 'v':
+      case 'V':
+        e.preventDefault();
+        this.openPostOnInstagram();
         break;
       case '0':
         e.preventDefault();
