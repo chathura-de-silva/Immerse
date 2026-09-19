@@ -82,13 +82,18 @@ export class MediaDetector {
   scan(root) {
     if (!root || !root.querySelectorAll) return;
 
-    // Strict semantic selector targeting only grid post links and feed post articles
-    const postTiles = Array.from(root.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], article'));
-    if (root.matches && (root.matches('a[href*="/p/"], a[href*="/reel/"]') || root.tagName === 'ARTICLE')) {
+    // Strict semantic selector targeting only photo post links and feed post articles (skipping reels)
+    const postTiles = Array.from(root.querySelectorAll('a[href*="/p/"], article'));
+    if (root.matches && (root.matches('a[href*="/p/"]') || root.tagName === 'ARTICLE')) {
       postTiles.push(root);
     }
 
     for (const tile of postTiles) {
+      // Explicitly skip Instagram Reels
+      if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) {
+        continue;
+      }
+
       // Find candidate images inside this tile
       const images = Array.from(tile.querySelectorAll('img[src], img[srcset]'));
 

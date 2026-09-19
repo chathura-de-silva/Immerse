@@ -35,9 +35,8 @@ export class HoverButtonManager {
       const target = e.target;
       if (!target) return;
 
-      // Strictly match post grid links or post articles (never hovercards, avatars, or dialogs)
+      // Strictly match photo post grid links or post articles (never reels, hovercards, avatars, or dialogs)
       const tile = target.closest('a[href*="/p/"]') ||
-                   target.closest('a[href*="/reel/"]') ||
                    target.closest('article');
 
       if (tile && this.tileToButtonMap.has(tile)) {
@@ -60,7 +59,6 @@ export class HoverButtonManager {
       if (!target) return;
 
       const tile = target.closest('a[href*="/p/"]') ||
-                   target.closest('a[href*="/reel/"]') ||
                    target.closest('article');
 
       if (tile && this.tileToButtonMap.has(tile)) {
@@ -86,13 +84,13 @@ export class HoverButtonManager {
   attach(imgElement, container) {
     if (!imgElement || !isLegitimatePostImage(imgElement)) return;
 
-    // Resolve the outermost interactive tile (must be a post link or article)
+    // Resolve the outermost interactive tile (must be a photo post link or article)
     const tile = imgElement.closest('a[href*="/p/"]') ||
-                 imgElement.closest('a[href*="/reel/"]') ||
                  imgElement.closest('article') ||
                  container;
 
     if (!tile || this.tileToButtonMap.has(tile)) return;
+    if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) return;
 
     // Ensure tile has relative positioning context for placement
     const tileStyle = window.getComputedStyle(tile);

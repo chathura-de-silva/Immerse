@@ -113,9 +113,18 @@ export function isLegitimatePostImage(img) {
     return false;
   }
 
-  // 5. Must reside within a legitimate post link or article
-  const postLink = img.closest('a[href*="/p/"], a[href*="/reel/"], article');
+  // 5. Explicitly reject Instagram Reels (videos)
+  if (img.closest('a[href*="/reel"]')) {
+    return false;
+  }
+
+  // 6. Must reside within a legitimate photo post link or article
+  const postLink = img.closest('a[href*="/p/"], article');
   if (!postLink) {
+    return false;
+  }
+
+  if (postLink.matches('a[href*="/reel"]') || postLink.querySelector('a[href*="/reel"]')) {
     return false;
   }
 
@@ -124,16 +133,17 @@ export function isLegitimatePostImage(img) {
 
 /**
  * Traverses up the DOM to locate Instagram's post container element.
- * Only matches legitimate post links (a[href*="/p/"]) or post articles.
+ * Only matches legitimate photo post links (a[href*="/p/"]) or photo post articles.
  *
  * @param {HTMLElement} element
  * @returns {HTMLElement|null}
  */
 export function findClosestPost(element) {
   if (!element) return null;
+  if (element.closest('a[href*="/reel"]')) return null;
+
   return (
     element.closest('a[href*="/p/"]') ||
-    element.closest('a[href*="/reel/"]') ||
     element.closest('article') ||
     element.closest('div[role="dialog"] a[href*="/p/"]')
   );

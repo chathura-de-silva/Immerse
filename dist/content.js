@@ -139,15 +139,22 @@
     if (w > 0 && w < 160 || h > 0 && h < 160) {
       return false;
     }
-    const postLink = img.closest('a[href*="/p/"], a[href*="/reel/"], article');
+    if (img.closest('a[href*="/reel"]')) {
+      return false;
+    }
+    const postLink = img.closest('a[href*="/p/"], article');
     if (!postLink) {
+      return false;
+    }
+    if (postLink.matches('a[href*="/reel"]') || postLink.querySelector('a[href*="/reel"]')) {
       return false;
     }
     return true;
   }
   function findClosestPost(element) {
     if (!element) return null;
-    return element.closest('a[href*="/p/"]') || element.closest('a[href*="/reel/"]') || element.closest("article") || element.closest('div[role="dialog"] a[href*="/p/"]');
+    if (element.closest('a[href*="/reel"]')) return null;
+    return element.closest('a[href*="/p/"]') || element.closest("article") || element.closest('div[role="dialog"] a[href*="/p/"]');
   }
   function findPostImages(postContainer) {
     if (!postContainer) return [];
@@ -206,7 +213,7 @@
       });
       const counter = createElement("div", {
         className: "immerse-counter",
-        textContent: "Post 1 of 1"
+        textContent: "Photo 1"
       });
       const controls = createElement("div", { className: "immerse-controls" });
       const zoomResetBtn = createElement("button", {
@@ -356,6 +363,8 @@
       document.addEventListener("mousemove", this._handleMouseMove);
       document.addEventListener("mouseup", this._handleMouseUp);
       root.addEventListener("mousemove", this._resetIdleTimer);
+      root.addEventListener("pointerdown", this._resetIdleTimer);
+      root.addEventListener("wheel", this._resetIdleTimer, { passive: true });
     }
     /**
      * Opens the lightbox overlay with the complete gallery of posts.
@@ -387,6 +396,7 @@
     close() {
       if (!this.isOpen || !this.dom) return;
       this.dom.root.classList.remove("immerse-active");
+      this.dom.root.classList.remove("immerse-controls-hidden");
       document.removeEventListener("keydown", this._handleKeyDown, true);
       if (this._idleTimer) {
         clearTimeout(this._idleTimer);
@@ -461,9 +471,8 @@
       tempImg.src = slide.url;
     }
     _updateHeaderCounter() {
-      const totalPosts = this.posts.length;
       const currentPostNum = this.currentPostIndex + 1;
-      this.dom.counter.textContent = `Post ${currentPostNum} of ${totalPosts}`;
+      this.dom.counter.textContent = `Photo ${currentPostNum}`;
       this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
       this.dom.nextPostBtn.disabled = false;
     }
@@ -512,7 +521,7 @@
       if (this.currentPostIndex < this.posts.length - 1) {
         this.goToPost(this.currentPostIndex + 1, 0);
       } else if (this.onLoadMore) {
-        this.dom.counter.textContent = "Loading more posts from feed...";
+        this.dom.counter.textContent = `Photo ${this.currentPostIndex + 1} \u2022 Loading...`;
         this._waitingForNextPost = true;
         this.onLoadMore();
       }
@@ -530,7 +539,6 @@
       this.currentPostIndex = postIndex;
       this.currentSlideIndex = slideIndex;
       this.loadCurrent();
-      this._resetIdleTimer();
     }
     /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
     nextSlide() {
@@ -553,7 +561,6 @@
       this.resetTransform();
       this.currentSlideIndex = slideIndex;
       this.loadCurrent();
-      this._resetIdleTimer();
     }
     /* ---------------- Zoom & Pan Transforms ---------------- */
     resetTransform() {
@@ -639,11 +646,14 @@
     }
     _handleKeyDown(e) {
       if (!this.isOpen) return;
-      this._resetIdleTimer();
       if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S" || e.key === "c" || e.key === "C")) {
         e.preventDefault();
         e.stopPropagation();
         return;
+      }
+      const isArrowNav = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "j", "J", "l", "L", "[", "]"].includes(e.key);
+      if (!isArrowNav) {
+        this._resetIdleTimer();
       }
       switch (e.key) {
         case "Escape":
@@ -748,7 +758,7 @@
         if (!settings.enabled) return;
         const target = e.target;
         if (!target) return;
-        const tile = target.closest('a[href*="/p/"]') || target.closest('a[href*="/reel/"]') || target.closest("article");
+        const tile = target.closest('a[href*="/p/"]') || target.closest("article");
         if (tile && this.tileToButtonMap.has(tile)) {
           if (hideTimer) {
             clearTimeout(hideTimer);
@@ -765,7 +775,7 @@
       document.addEventListener("pointerout", (e) => {
         const target = e.target;
         if (!target) return;
-        const tile = target.closest('a[href*="/p/"]') || target.closest('a[href*="/reel/"]') || target.closest("article");
+        const tile = target.closest('a[href*="/p/"]') || target.closest("article");
         if (tile && this.tileToButtonMap.has(tile)) {
           const related = e.relatedTarget;
           if (!related || !tile.contains(related)) {
@@ -787,8 +797,9 @@
      */
     attach(imgElement, container) {
       if (!imgElement || !isLegitimatePostImage(imgElement)) return;
-      const tile = imgElement.closest('a[href*="/p/"]') || imgElement.closest('a[href*="/reel/"]') || imgElement.closest("article") || container;
+      const tile = imgElement.closest('a[href*="/p/"]') || imgElement.closest("article") || container;
       if (!tile || this.tileToButtonMap.has(tile)) return;
+      if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) return;
       const tileStyle = window.getComputedStyle(tile);
       if (tileStyle.position === "static") {
         tile.style.position = "relative";
@@ -1042,11 +1053,14 @@
      */
     scan(root) {
       if (!root || !root.querySelectorAll) return;
-      const postTiles = Array.from(root.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], article'));
-      if (root.matches && (root.matches('a[href*="/p/"], a[href*="/reel/"]') || root.tagName === "ARTICLE")) {
+      const postTiles = Array.from(root.querySelectorAll('a[href*="/p/"], article'));
+      if (root.matches && (root.matches('a[href*="/p/"]') || root.tagName === "ARTICLE")) {
         postTiles.push(root);
       }
       for (const tile of postTiles) {
+        if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) {
+          continue;
+        }
         const images = Array.from(tile.querySelectorAll("img[src], img[srcset]"));
         for (const img of images) {
           if (this.processedImages.has(img)) continue;
@@ -1121,6 +1135,7 @@
       for (const entry of validEntries) {
         const tile = entry.container || findClosestPost(entry.img);
         if (!tile) continue;
+        if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) continue;
         if (!postMap.has(tile)) {
           postMap.set(tile, {
             tile,

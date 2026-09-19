@@ -59,10 +59,19 @@
 }
 
 /* Auto-hide controls when idle */
-.immerse-overlay-root.immerse-controls-hidden .immerse-header,
-.immerse-overlay-root.immerse-controls-hidden .immerse-carousel-controller {
+.immerse-overlay-root.immerse-controls-hidden {
+  cursor: none;
+}
+
+.immerse-overlay-root.immerse-controls-hidden .immerse-header {
   opacity: 0;
   transform: translateY(-8px);
+  pointer-events: none;
+}
+
+.immerse-overlay-root.immerse-controls-hidden .immerse-carousel-controller {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
   pointer-events: none;
 }
 
@@ -278,8 +287,7 @@
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.25);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.35s var(--immerse-smooth), transform 0.35s var(--immerse-smooth);
 }
 
 .immerse-carousel-btn {

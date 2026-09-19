@@ -34,6 +34,7 @@ export class GallerySequencer {
     for (const entry of validEntries) {
       const tile = entry.container || findClosestPost(entry.img);
       if (!tile) continue;
+      if (tile.matches('a[href*="/reel"]') || tile.querySelector('a[href*="/reel"]')) continue;
 
       if (!postMap.has(tile)) {
         postMap.set(tile, {

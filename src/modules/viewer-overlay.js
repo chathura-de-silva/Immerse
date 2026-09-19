@@ -72,10 +72,10 @@ export class ViewerOverlay {
       innerHTML: '<span class="immerse-badge-dot"></span><span class="immerse-badge-text">Ultra-HD</span>'
     });
 
-    // Post counter pill (e.g. "Post 3 of 18")
+    // Photo counter pill (e.g. "Photo 1")
     const counter = createElement('div', {
       className: 'immerse-counter',
-      textContent: 'Post 1 of 1'
+      textContent: 'Photo 1'
     });
 
     // Header controls group
@@ -231,6 +231,8 @@ export class ViewerOverlay {
     document.addEventListener('mousemove', this._handleMouseMove);
     document.addEventListener('mouseup', this._handleMouseUp);
     root.addEventListener('mousemove', this._resetIdleTimer);
+    root.addEventListener('pointerdown', this._resetIdleTimer);
+    root.addEventListener('wheel', this._resetIdleTimer, { passive: true });
   }
 
   /**
@@ -270,6 +272,7 @@ export class ViewerOverlay {
     if (!this.isOpen || !this.dom) return;
 
     this.dom.root.classList.remove('immerse-active');
+    this.dom.root.classList.remove('immerse-controls-hidden');
     document.removeEventListener('keydown', this._handleKeyDown, true);
 
     if (this._idleTimer) {
@@ -363,10 +366,9 @@ export class ViewerOverlay {
   }
 
   _updateHeaderCounter() {
-    const totalPosts = this.posts.length;
     const currentPostNum = this.currentPostIndex + 1;
 
-    this.dom.counter.textContent = `Post ${currentPostNum} of ${totalPosts}`;
+    this.dom.counter.textContent = `Photo ${currentPostNum}`;
     this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
     // Keep next button clickable so user can trigger load-more at the end
     this.dom.nextPostBtn.disabled = false;
@@ -427,7 +429,7 @@ export class ViewerOverlay {
     if (this.currentPostIndex < this.posts.length - 1) {
       this.goToPost(this.currentPostIndex + 1, 0);
     } else if (this.onLoadMore) {
-      this.dom.counter.textContent = 'Loading more posts from feed...';
+      this.dom.counter.textContent = `Photo ${this.currentPostIndex + 1} • Loading...`;
       this._waitingForNextPost = true;
       this.onLoadMore();
     }
@@ -447,7 +449,6 @@ export class ViewerOverlay {
     this.currentPostIndex = postIndex;
     this.currentSlideIndex = slideIndex;
     this.loadCurrent();
-    this._resetIdleTimer();
   }
 
   /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
@@ -474,7 +475,6 @@ export class ViewerOverlay {
     this.resetTransform();
     this.currentSlideIndex = slideIndex;
     this.loadCurrent();
-    this._resetIdleTimer();
   }
 
   /* ---------------- Zoom & Pan Transforms ---------------- */
@@ -587,13 +587,18 @@ export class ViewerOverlay {
 
   _handleKeyDown(e) {
     if (!this.isOpen) return;
-    this._resetIdleTimer();
 
     // Actively block save and copy shortcuts
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'c' || e.key === 'C')) {
       e.preventDefault();
       e.stopPropagation();
       return;
+    }
+
+    // Keyboard arrow keys navigate without waking up auto-hidden controls
+    const isArrowNav = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'j', 'J', 'l', 'L', '[', ']'].includes(e.key);
+    if (!isArrowNav) {
+      this._resetIdleTimer();
     }
 
     switch (e.key) {
