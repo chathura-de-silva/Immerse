@@ -1,17 +1,16 @@
 /**
  * viewer-overlay.js
- * Intuitive, high-performance fullscreen lightbox overlay with pan/zoom,
- * carousel navigation, resolution badge, and high-res download.
+ * Intuitive, desktop-style fullscreen photo viewer with liquid-glass design language,
+ * seamless grid navigation (arrow keys), pan/zoom, auto-hide controls, and copyright protection.
  */
 
 import { createElement } from '../utils/dom-helpers.js';
-import { getHighestResolutionUrl } from '../utils/srcset-parser.js';
 
 export class ViewerOverlay {
   constructor(settings = {}) {
     this.settings = settings;
     this.isOpen = false;
-    this.items = []; // Array of { url, width, height, originalElement }
+    this.items = []; // Array of { id, url, width, height, postIndex, slideIndex, totalSlides, isCarousel }
     this.currentIndex = 0;
 
     // Pan & Zoom state
@@ -24,17 +23,21 @@ export class ViewerOverlay {
     this.minScale = 0.5;
     this.maxScale = 6;
 
+    // Idle auto-hide timer
+    this._idleTimer = null;
     this.dom = null;
+
     this._handleKeyDown = this._handleKeyDown.bind(this);
     this._handleWheel = this._handleWheel.bind(this);
     this._handleMouseDown = this._handleMouseDown.bind(this);
     this._handleMouseMove = this._handleMouseMove.bind(this);
     this._handleMouseUp = this._handleMouseUp.bind(this);
     this._handleDblClick = this._handleDblClick.bind(this);
+    this._resetIdleTimer = this._resetIdleTimer.bind(this);
   }
 
   /**
-   * Builds the DOM elements for the overlay if not already built.
+   * Builds the DOM elements for the overlay with liquid-glass design language.
    */
   _ensureDom() {
     if (this.dom) return;
@@ -45,7 +48,7 @@ export class ViewerOverlay {
       attributes: { 'aria-modal': 'true', role: 'dialog' }
     });
 
-    // Backdrop
+    // Backdrop with deep blur
     const backdrop = createElement('div', {
       className: 'immerse-backdrop',
       events: { click: (e) => {
@@ -59,10 +62,10 @@ export class ViewerOverlay {
     // Resolution badge
     const badge = createElement('div', {
       className: 'immerse-badge',
-      innerHTML: '<span class="immerse-badge-dot"></span><span class="immerse-badge-text">HD</span>'
+      innerHTML: '<span class="immerse-badge-dot"></span><span class="immerse-badge-text">Ultra-HD</span>'
     });
 
-    // Carousel counter
+    // Gallery counter pill
     const counter = createElement('div', {
       className: 'immerse-counter',
       textContent: '1 / 1'
@@ -108,22 +111,22 @@ export class ViewerOverlay {
       }
     });
 
-    // Carousel Prev/Next Buttons
+    // Navigation buttons (Previous / Next image in grid)
     const prevBtn = createElement('button', {
       className: 'immerse-nav-btn immerse-nav-prev',
       innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
-      attributes: { 'aria-label': 'Previous image' },
+      attributes: { 'aria-label': 'Previous image (Left Arrow)' },
       events: { click: (e) => { e.stopPropagation(); this.prev(); } }
     });
 
     const nextBtn = createElement('button', {
       className: 'immerse-nav-btn immerse-nav-next',
       innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
-      attributes: { 'aria-label': 'Next image' },
+      attributes: { 'aria-label': 'Next image (Right Arrow)' },
       events: { click: (e) => { e.stopPropagation(); this.next(); } }
     });
 
-    // Image container & element (protected with anti-download shield)
+    // Image container & protected element
     const imgWrapper = createElement('div', { className: 'immerse-image-wrapper' });
     const img = createElement('img', {
       className: 'immerse-image',
@@ -131,13 +134,13 @@ export class ViewerOverlay {
       style: { pointerEvents: 'none' }
     });
 
-    // Transparent copyright shield preventing direct click/save on raw image
+    // Protective transparent shield over image container
     const shield = createElement('div', {
       className: 'immerse-shield',
       attributes: { 'aria-hidden': 'true' }
     });
 
-    // Spinner
+    // Shimmer spinner
     const spinner = createElement('div', {
       className: 'immerse-spinner',
       innerHTML: '<div class="immerse-spinner-ring"></div>'
@@ -147,7 +150,7 @@ export class ViewerOverlay {
     stage.append(prevBtn, imgWrapper, nextBtn);
     root.append(backdrop, header, stage);
 
-    // Active anti-download protection: block context menu and drag operations
+    // Copyright protection: block context menus, drag-and-drop, and selection
     root.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -176,12 +179,13 @@ export class ViewerOverlay {
 
     document.addEventListener('mousemove', this._handleMouseMove);
     document.addEventListener('mouseup', this._handleMouseUp);
+    root.addEventListener('mousemove', this._resetIdleTimer);
   }
 
   /**
-   * Opens the lightbox overlay with a set of image items.
+   * Opens the lightbox overlay with the complete gallery sequence.
    *
-   * @param {Array<{url: string, width?: number, height?: number}>} items
+   * @param {Array<Object>} items Array of gallery items
    * @param {number} [startIndex=0]
    */
   open(items, startIndex = 0) {
@@ -202,6 +206,7 @@ export class ViewerOverlay {
     // Show root with fade-in animation
     requestAnimationFrame(() => {
       this.dom.root.classList.add('immerse-active');
+      this._resetIdleTimer();
     });
 
     this.isOpen = true;
@@ -219,6 +224,11 @@ export class ViewerOverlay {
     this.dom.root.classList.remove('immerse-active');
     document.removeEventListener('keydown', this._handleKeyDown, true);
 
+    if (this._idleTimer) {
+      clearTimeout(this._idleTimer);
+      this._idleTimer = null;
+    }
+
     if (this._originalBodyOverflow !== undefined) {
       document.body.style.overflow = this._originalBodyOverflow;
     }
@@ -226,7 +236,6 @@ export class ViewerOverlay {
     this.isOpen = false;
     this.resetTransform();
 
-    // Exit browser fullscreen if active
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
@@ -236,6 +245,24 @@ export class ViewerOverlay {
         this.dom.root.parentElement.removeChild(this.dom.root);
       }
     }, 250);
+  }
+
+  /**
+   * Updates the sequence items dynamically if new posts load into the grid.
+   * @param {Array<Object>} newItems
+   */
+  updateSequence(newItems) {
+    if (!newItems || newItems.length === 0) return;
+    const currentItem = this.items[this.currentIndex];
+    this.items = newItems;
+
+    if (currentItem) {
+      const newIdx = this.items.findIndex(it => it.id === currentItem.id || it.url === currentItem.url);
+      if (newIdx !== -1) {
+        this.currentIndex = newIdx;
+      }
+    }
+    this._updateCounter();
   }
 
   /**
@@ -253,26 +280,14 @@ export class ViewerOverlay {
     this.dom.spinner.style.display = 'block';
     this.dom.img.style.opacity = '0';
 
-    // Update Counter
-    if (this.items.length > 1) {
-      this.dom.counter.style.display = 'block';
-      this.dom.counter.textContent = `${index + 1} / ${this.items.length}`;
-      this.dom.prevBtn.style.display = 'flex';
-      this.dom.nextBtn.style.display = 'flex';
-      this.dom.prevBtn.disabled = index === 0;
-      this.dom.nextBtn.disabled = index === this.items.length - 1;
-    } else {
-      this.dom.counter.style.display = 'none';
-      this.dom.prevBtn.style.display = 'none';
-      this.dom.nextBtn.style.display = 'none';
-    }
+    this._updateCounter();
 
     // Set badge to loading state
-    this.dom.badgeText.textContent = 'Loading Ultra-HD...';
+    this.dom.badgeText.textContent = 'Fetching Ultra-HD...';
 
     const tempImg = new Image();
     tempImg.onload = () => {
-      if (this.currentIndex !== index) return; // Prevent race conditions
+      if (this.currentIndex !== index) return;
       this.dom.img.src = item.url;
       this.dom.img.style.opacity = '1';
       this.dom.spinner.style.display = 'none';
@@ -281,7 +296,6 @@ export class ViewerOverlay {
       const h = tempImg.naturalHeight;
       this.dom.badgeText.textContent = `${w} × ${h} • Highest Quality`;
 
-      // Preload adjacent images
       this._preloadAdjacent(index);
     };
 
@@ -296,10 +310,34 @@ export class ViewerOverlay {
     tempImg.src = item.url;
   }
 
+  _updateCounter() {
+    const total = this.items.length;
+    const current = this.currentIndex + 1;
+    const item = this.items[this.currentIndex];
+
+    if (total > 1) {
+      this.dom.counter.style.display = 'block';
+      if (item && item.isCarousel && item.totalSlides > 1) {
+        this.dom.counter.textContent = `${current} / ${total} • Slide ${item.slideIndex + 1}/${item.totalSlides}`;
+      } else {
+        this.dom.counter.textContent = `${current} / ${total}`;
+      }
+
+      this.dom.prevBtn.style.display = 'flex';
+      this.dom.nextBtn.style.display = 'flex';
+      this.dom.prevBtn.disabled = this.currentIndex === 0;
+      this.dom.nextBtn.disabled = this.currentIndex === total - 1;
+    } else {
+      this.dom.counter.style.display = 'none';
+      this.dom.prevBtn.style.display = 'none';
+      this.dom.nextBtn.style.display = 'none';
+    }
+  }
+
   _preloadAdjacent(currentIndex) {
-    [-1, 1].forEach(offset => {
+    [-1, 1, 2].forEach(offset => {
       const idx = currentIndex + offset;
-      if (this.items[idx]) {
+      if (this.items[idx]?.url) {
         const pre = new Image();
         pre.src = this.items[idx].url;
       }
@@ -309,18 +347,17 @@ export class ViewerOverlay {
   next() {
     if (this.currentIndex < this.items.length - 1) {
       this.loadImage(this.currentIndex + 1);
+      this._resetIdleTimer();
     }
   }
 
   prev() {
     if (this.currentIndex > 0) {
       this.loadImage(this.currentIndex - 1);
+      this._resetIdleTimer();
     }
   }
 
-  /**
-   * Resets pan and zoom transformations.
-   */
   resetTransform() {
     this.scale = 1;
     this.panX = 0;
@@ -332,7 +369,7 @@ export class ViewerOverlay {
     if (!this.dom?.img) return;
 
     if (smooth) {
-      this.dom.img.style.transition = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+      this.dom.img.style.transition = 'transform 0.22s cubic-bezier(0.2, 0, 0, 1)';
     } else {
       this.dom.img.style.transition = 'none';
     }
@@ -347,19 +384,16 @@ export class ViewerOverlay {
     }
   }
 
-  /**
-   * Smooth mouse wheel zoom anchored to the cursor position.
-   */
   _handleWheel(e) {
     if (!this.isOpen) return;
     e.preventDefault();
+    this._resetIdleTimer();
 
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
     const newScale = Math.max(this.minScale, Math.min(this.maxScale, this.scale * zoomFactor));
 
     if (newScale === this.scale) return;
 
-    // Anchor zoom relative to stage center
     const rect = this.dom.stage.getBoundingClientRect();
     const mouseX = e.clientX - (rect.left + rect.width / 2);
     const mouseY = e.clientY - (rect.top + rect.height / 2);
@@ -369,7 +403,6 @@ export class ViewerOverlay {
     this.panY = mouseY - (mouseY - this.panY) * ratio;
     this.scale = newScale;
 
-    // If scaled back to 1x or below, center image
     if (this.scale <= 1) {
       this.panX = 0;
       this.panY = 0;
@@ -380,7 +413,7 @@ export class ViewerOverlay {
 
   _handleMouseDown(e) {
     if (!this.isOpen || e.button !== 0) return;
-    if (this.scale <= 1) return; // Only pan when zoomed in
+    if (this.scale <= 1) return;
 
     this.isDragging = true;
     this.startX = e.clientX - this.panX;
@@ -406,6 +439,7 @@ export class ViewerOverlay {
   _handleDblClick(e) {
     if (!this.isOpen) return;
     e.preventDefault();
+    this._resetIdleTimer();
 
     if (this.scale > 1.1) {
       this.resetTransform();
@@ -422,8 +456,9 @@ export class ViewerOverlay {
 
   _handleKeyDown(e) {
     if (!this.isOpen) return;
+    this._resetIdleTimer();
 
-    // Actively block save (Ctrl+S / Cmd+S) and copy (Ctrl+C / Cmd+C) keyboard attempts
+    // Actively block save and copy shortcuts
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'c' || e.key === 'C')) {
       e.preventDefault();
       e.stopPropagation();
@@ -437,10 +472,14 @@ export class ViewerOverlay {
         this.close();
         break;
       case 'ArrowRight':
+      case 'l':
+      case 'L':
         e.preventDefault();
         this.next();
         break;
       case 'ArrowLeft':
+      case 'j':
+      case 'J':
         e.preventDefault();
         this.prev();
         break;
@@ -467,6 +506,18 @@ export class ViewerOverlay {
         this._applyTransform(true);
         break;
     }
+  }
+
+  _resetIdleTimer() {
+    if (!this.dom?.root) return;
+    this.dom.root.classList.remove('immerse-controls-hidden');
+
+    if (this._idleTimer) clearTimeout(this._idleTimer);
+    this._idleTimer = setTimeout(() => {
+      if (this.isOpen && !this.isDragging) {
+        this.dom.root.classList.add('immerse-controls-hidden');
+      }
+    }, 3200);
   }
 
   toggleNativeFullscreen() {

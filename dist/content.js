@@ -136,58 +136,6 @@
     });
   }
 
-  // src/utils/srcset-parser.js
-  function parseSrcset(srcset) {
-    if (!srcset || typeof srcset !== "string") {
-      return [];
-    }
-    const trimmed = srcset.trim();
-    if (!trimmed) {
-      return [];
-    }
-    const candidateRegex = /(?:^|,)\s*([^\s]+)\s*(?:([0-9.]+)w|([0-9.]+)x)?/g;
-    const candidates = [];
-    let match;
-    while ((match = candidateRegex.exec(trimmed)) !== null) {
-      const rawUrl = match[1];
-      if (!rawUrl) continue;
-      const widthDesc = match[2] ? parseFloat(match[2]) : 0;
-      const densityDesc = match[3] ? parseFloat(match[3]) : 0;
-      let effectiveWidth = widthDesc;
-      if (!effectiveWidth && densityDesc) {
-        effectiveWidth = Math.round(densityDesc * 640);
-      }
-      if (!effectiveWidth) {
-        effectiveWidth = extractWidthFromUrl(rawUrl);
-      }
-      candidates.push({
-        url: rawUrl,
-        width: effectiveWidth,
-        density: densityDesc || 1
-      });
-    }
-    candidates.sort((a, b) => b.width - a.width);
-    return candidates;
-  }
-  function extractWidthFromUrl(url) {
-    if (!url || typeof url !== "string") return 0;
-    const match = url.match(/[sp]?(\d{3,4})x(\d{3,4})/i) || url.match(/c\d+\.\d+\.(\d{3,4})\.(\d{3,4})/i) || url.match(/[_\-/](\d{3,4})w/i);
-    if (match) {
-      return parseInt(match[1], 10);
-    }
-    return 0;
-  }
-  function getHighestResolutionUrl(imgElement) {
-    if (!imgElement) return "";
-    const srcset = (typeof imgElement.getAttribute === "function" ? imgElement.getAttribute("srcset") : imgElement.srcset) || "";
-    const candidates = parseSrcset(srcset);
-    if (candidates.length > 0 && candidates[0].url) {
-      return candidates[0].url;
-    }
-    const fallbackUrl = imgElement.currentSrc || imgElement.src || "";
-    return fallbackUrl;
-  }
-
   // src/modules/viewer-overlay.js
   var ViewerOverlay = class {
     constructor(settings = {}) {
@@ -203,6 +151,7 @@
       this.startY = 0;
       this.minScale = 0.5;
       this.maxScale = 6;
+      this._idleTimer = null;
       this.dom = null;
       this._handleKeyDown = this._handleKeyDown.bind(this);
       this._handleWheel = this._handleWheel.bind(this);
@@ -210,9 +159,10 @@
       this._handleMouseMove = this._handleMouseMove.bind(this);
       this._handleMouseUp = this._handleMouseUp.bind(this);
       this._handleDblClick = this._handleDblClick.bind(this);
+      this._resetIdleTimer = this._resetIdleTimer.bind(this);
     }
     /**
-     * Builds the DOM elements for the overlay if not already built.
+     * Builds the DOM elements for the overlay with liquid-glass design language.
      */
     _ensureDom() {
       if (this.dom) return;
@@ -229,7 +179,7 @@
       const header = createElement("div", { className: "immerse-header" });
       const badge = createElement("div", {
         className: "immerse-badge",
-        innerHTML: '<span class="immerse-badge-dot"></span><span class="immerse-badge-text">HD</span>'
+        innerHTML: '<span class="immerse-badge-dot"></span><span class="immerse-badge-text">Ultra-HD</span>'
       });
       const counter = createElement("div", {
         className: "immerse-counter",
@@ -267,7 +217,7 @@
       const prevBtn = createElement("button", {
         className: "immerse-nav-btn immerse-nav-prev",
         innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
-        attributes: { "aria-label": "Previous image" },
+        attributes: { "aria-label": "Previous image (Left Arrow)" },
         events: { click: (e) => {
           e.stopPropagation();
           this.prev();
@@ -276,7 +226,7 @@
       const nextBtn = createElement("button", {
         className: "immerse-nav-btn immerse-nav-next",
         innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
-        attributes: { "aria-label": "Next image" },
+        attributes: { "aria-label": "Next image (Right Arrow)" },
         events: { click: (e) => {
           e.stopPropagation();
           this.next();
@@ -325,11 +275,12 @@
       };
       document.addEventListener("mousemove", this._handleMouseMove);
       document.addEventListener("mouseup", this._handleMouseUp);
+      root.addEventListener("mousemove", this._resetIdleTimer);
     }
     /**
-     * Opens the lightbox overlay with a set of image items.
+     * Opens the lightbox overlay with the complete gallery sequence.
      *
-     * @param {Array<{url: string, width?: number, height?: number}>} items
+     * @param {Array<Object>} items Array of gallery items
      * @param {number} [startIndex=0]
      */
     open(items, startIndex = 0) {
@@ -344,6 +295,7 @@
       document.body.style.overflow = "hidden";
       requestAnimationFrame(() => {
         this.dom.root.classList.add("immerse-active");
+        this._resetIdleTimer();
       });
       this.isOpen = true;
       document.addEventListener("keydown", this._handleKeyDown, true);
@@ -356,6 +308,10 @@
       if (!this.isOpen || !this.dom) return;
       this.dom.root.classList.remove("immerse-active");
       document.removeEventListener("keydown", this._handleKeyDown, true);
+      if (this._idleTimer) {
+        clearTimeout(this._idleTimer);
+        this._idleTimer = null;
+      }
       if (this._originalBodyOverflow !== void 0) {
         document.body.style.overflow = this._originalBodyOverflow;
       }
@@ -372,6 +328,22 @@
       }, 250);
     }
     /**
+     * Updates the sequence items dynamically if new posts load into the grid.
+     * @param {Array<Object>} newItems
+     */
+    updateSequence(newItems) {
+      if (!newItems || newItems.length === 0) return;
+      const currentItem = this.items[this.currentIndex];
+      this.items = newItems;
+      if (currentItem) {
+        const newIdx = this.items.findIndex((it) => it.id === currentItem.id || it.url === currentItem.url);
+        if (newIdx !== -1) {
+          this.currentIndex = newIdx;
+        }
+      }
+      this._updateCounter();
+    }
+    /**
      * Loads the specified image index into the lightbox.
      *
      * @param {number} index
@@ -383,19 +355,8 @@
       this.resetTransform();
       this.dom.spinner.style.display = "block";
       this.dom.img.style.opacity = "0";
-      if (this.items.length > 1) {
-        this.dom.counter.style.display = "block";
-        this.dom.counter.textContent = `${index + 1} / ${this.items.length}`;
-        this.dom.prevBtn.style.display = "flex";
-        this.dom.nextBtn.style.display = "flex";
-        this.dom.prevBtn.disabled = index === 0;
-        this.dom.nextBtn.disabled = index === this.items.length - 1;
-      } else {
-        this.dom.counter.style.display = "none";
-        this.dom.prevBtn.style.display = "none";
-        this.dom.nextBtn.style.display = "none";
-      }
-      this.dom.badgeText.textContent = "Loading Ultra-HD...";
+      this._updateCounter();
+      this.dom.badgeText.textContent = "Fetching Ultra-HD...";
       const tempImg = new Image();
       tempImg.onload = () => {
         if (this.currentIndex !== index) return;
@@ -416,10 +377,31 @@
       };
       tempImg.src = item.url;
     }
+    _updateCounter() {
+      const total = this.items.length;
+      const current = this.currentIndex + 1;
+      const item = this.items[this.currentIndex];
+      if (total > 1) {
+        this.dom.counter.style.display = "block";
+        if (item && item.isCarousel && item.totalSlides > 1) {
+          this.dom.counter.textContent = `${current} / ${total} \u2022 Slide ${item.slideIndex + 1}/${item.totalSlides}`;
+        } else {
+          this.dom.counter.textContent = `${current} / ${total}`;
+        }
+        this.dom.prevBtn.style.display = "flex";
+        this.dom.nextBtn.style.display = "flex";
+        this.dom.prevBtn.disabled = this.currentIndex === 0;
+        this.dom.nextBtn.disabled = this.currentIndex === total - 1;
+      } else {
+        this.dom.counter.style.display = "none";
+        this.dom.prevBtn.style.display = "none";
+        this.dom.nextBtn.style.display = "none";
+      }
+    }
     _preloadAdjacent(currentIndex) {
-      [-1, 1].forEach((offset) => {
+      [-1, 1, 2].forEach((offset) => {
         const idx = currentIndex + offset;
-        if (this.items[idx]) {
+        if (this.items[idx]?.url) {
           const pre = new Image();
           pre.src = this.items[idx].url;
         }
@@ -428,16 +410,15 @@
     next() {
       if (this.currentIndex < this.items.length - 1) {
         this.loadImage(this.currentIndex + 1);
+        this._resetIdleTimer();
       }
     }
     prev() {
       if (this.currentIndex > 0) {
         this.loadImage(this.currentIndex - 1);
+        this._resetIdleTimer();
       }
     }
-    /**
-     * Resets pan and zoom transformations.
-     */
     resetTransform() {
       this.scale = 1;
       this.panX = 0;
@@ -447,7 +428,7 @@
     _applyTransform(smooth = false) {
       if (!this.dom?.img) return;
       if (smooth) {
-        this.dom.img.style.transition = "transform 0.2s cubic-bezier(0.2, 0, 0, 1)";
+        this.dom.img.style.transition = "transform 0.22s cubic-bezier(0.2, 0, 0, 1)";
       } else {
         this.dom.img.style.transition = "none";
       }
@@ -459,12 +440,10 @@
         this.dom.stage.classList.remove("immerse-can-pan", "immerse-is-panning");
       }
     }
-    /**
-     * Smooth mouse wheel zoom anchored to the cursor position.
-     */
     _handleWheel(e) {
       if (!this.isOpen) return;
       e.preventDefault();
+      this._resetIdleTimer();
       const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
       const newScale = Math.max(this.minScale, Math.min(this.maxScale, this.scale * zoomFactor));
       if (newScale === this.scale) return;
@@ -505,6 +484,7 @@
     _handleDblClick(e) {
       if (!this.isOpen) return;
       e.preventDefault();
+      this._resetIdleTimer();
       if (this.scale > 1.1) {
         this.resetTransform();
       } else {
@@ -519,6 +499,7 @@
     }
     _handleKeyDown(e) {
       if (!this.isOpen) return;
+      this._resetIdleTimer();
       if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S" || e.key === "c" || e.key === "C")) {
         e.preventDefault();
         e.stopPropagation();
@@ -531,10 +512,14 @@
           this.close();
           break;
         case "ArrowRight":
+        case "l":
+        case "L":
           e.preventDefault();
           this.next();
           break;
         case "ArrowLeft":
+        case "j":
+        case "J":
           e.preventDefault();
           this.prev();
           break;
@@ -565,6 +550,16 @@
           break;
       }
     }
+    _resetIdleTimer() {
+      if (!this.dom?.root) return;
+      this.dom.root.classList.remove("immerse-controls-hidden");
+      if (this._idleTimer) clearTimeout(this._idleTimer);
+      this._idleTimer = setTimeout(() => {
+        if (this.isOpen && !this.isDragging) {
+          this.dom.root.classList.add("immerse-controls-hidden");
+        }
+      }, 3200);
+    }
     toggleNativeFullscreen() {
       if (!document.fullscreenElement) {
         this.dom.root.requestFullscreen().catch(() => {
@@ -586,20 +581,22 @@
     constructor({ onTrigger, getSettings }) {
       this.onTrigger = onTrigger;
       this.getSettings = getSettings;
-      this.attachedContainers = /* @__PURE__ */ new WeakSet();
+      this.attachedTiles = /* @__PURE__ */ new WeakSet();
     }
     /**
-     * Attaches a hover trigger to an image or its parent container.
+     * Attaches a hover trigger to an image or its parent tile in the grid or feed.
      *
      * @param {HTMLImageElement} imgElement
      * @param {HTMLElement} container
      */
     attach(imgElement, container) {
-      if (!container || this.attachedContainers.has(container)) return;
-      this.attachedContainers.add(container);
-      const computedStyle = window.getComputedStyle(container);
-      if (computedStyle.position === "static") {
-        container.style.position = "relative";
+      if (!imgElement) return;
+      const tile = imgElement.closest('a[href^="/p/"]') || imgElement.closest('a[href^="/reel/"]') || imgElement.closest("div._aabd") || imgElement.closest("article") || container || imgElement.parentElement;
+      if (!tile || this.attachedTiles.has(tile)) return;
+      this.attachedTiles.add(tile);
+      const tileStyle = window.getComputedStyle(tile);
+      if (tileStyle.position === "static") {
+        tile.style.position = "relative";
       }
       const btnContainer = createElement("div", {
         className: "immerse-hover-btn-container"
@@ -608,8 +605,8 @@
         className: "immerse-hover-btn",
         attributes: {
           type: "button",
-          title: "Open in High-Resolution Fullscreen (Immerse)",
-          "aria-label": "Open in High-Resolution Fullscreen"
+          title: "View in Ultra-HD Fullscreen (Immerse)",
+          "aria-label": "View in Ultra-HD Fullscreen"
         },
         innerHTML: `
         <svg viewBox="0 0 24 24" fill="none">
@@ -622,34 +619,167 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        this.onTrigger(imgElement, container);
+        this.onTrigger(imgElement, tile);
       });
       btnContainer.appendChild(btn);
       let hideTimer = null;
-      container.addEventListener("mouseenter", () => {
-        if (hideTimer) clearTimeout(hideTimer);
+      const showBtn = () => {
+        if (hideTimer) {
+          clearTimeout(hideTimer);
+          hideTimer = null;
+        }
         const settings = this.getSettings ? this.getSettings() : { enabled: true };
         if (settings.enabled !== false) {
           btn.classList.add("immerse-visible");
         }
-      });
-      container.addEventListener("mouseleave", () => {
+      };
+      const hideBtn = () => {
+        if (hideTimer) clearTimeout(hideTimer);
         hideTimer = setTimeout(() => {
           btn.classList.remove("immerse-visible");
-        }, 150);
-      });
+        }, 120);
+      };
+      tile.addEventListener("mouseenter", showBtn, { passive: true });
+      tile.addEventListener("mousemove", showBtn, { passive: true });
+      tile.addEventListener("mouseleave", hideBtn, { passive: true });
       imgElement.addEventListener("click", (e) => {
         const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: "both" };
         if (!settings.enabled) return;
         if (settings.triggerMode === "image-click" || settings.triggerMode === "both") {
           e.preventDefault();
           e.stopPropagation();
-          this.onTrigger(imgElement, container);
+          this.onTrigger(imgElement, tile);
         }
       }, true);
-      container.appendChild(btnContainer);
+      tile.appendChild(btnContainer);
     }
   };
+
+  // src/utils/srcset-parser.js
+  function parseSrcset(srcset) {
+    if (!srcset || typeof srcset !== "string") {
+      return [];
+    }
+    const trimmed = srcset.trim();
+    if (!trimmed) {
+      return [];
+    }
+    const candidateRegex = /(?:^|,)\s*([^\s]+)\s*(?:([0-9.]+)w|([0-9.]+)x)?/g;
+    const candidates = [];
+    let match;
+    while ((match = candidateRegex.exec(trimmed)) !== null) {
+      const rawUrl = match[1];
+      if (!rawUrl) continue;
+      const widthDesc = match[2] ? parseFloat(match[2]) : 0;
+      const densityDesc = match[3] ? parseFloat(match[3]) : 0;
+      let effectiveWidth = widthDesc;
+      if (!effectiveWidth && densityDesc) {
+        effectiveWidth = Math.round(densityDesc * 640);
+      }
+      if (!effectiveWidth) {
+        effectiveWidth = extractWidthFromUrl(rawUrl);
+      }
+      candidates.push({
+        url: rawUrl,
+        width: effectiveWidth,
+        density: densityDesc || 1
+      });
+    }
+    candidates.sort((a, b) => b.width - a.width);
+    return candidates;
+  }
+  function extractWidthFromUrl(url) {
+    if (!url || typeof url !== "string") return 0;
+    const match = url.match(/[sp]?(\d{3,4})x(\d{3,4})/i) || url.match(/c\d+\.\d+\.(\d{3,4})\.(\d{3,4})/i) || url.match(/[_\-/](\d{3,4})w/i);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+    return 0;
+  }
+  function upgradeCdnUrl(url) {
+    if (!url || typeof url !== "string") return url;
+    return url.replace(/([sp])(150|240|320|480|640|750)x\2/g, "$11080x1080");
+  }
+  function extractFromReactFiber(element) {
+    if (!element || typeof element !== "object") return null;
+    let curr = element;
+    for (let depth = 0; depth < 5 && curr; depth++) {
+      const propsKey = Object.keys(curr).find((k) => k.startsWith("__reactProps$"));
+      if (propsKey && curr[propsKey]) {
+        const match = searchMediaProps(curr[propsKey], 0);
+        if (match) return match;
+      }
+      const fiberKey = Object.keys(curr).find((k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));
+      if (fiberKey && curr[fiberKey]) {
+        let fiber = curr[fiberKey];
+        for (let fDepth = 0; fDepth < 8 && fiber; fDepth++) {
+          const match = searchMediaProps(fiber.memoizedProps, 0) || searchMediaProps(fiber.pendingProps, 0);
+          if (match) return match;
+          fiber = fiber.return;
+        }
+      }
+      curr = curr.parentElement;
+    }
+    return null;
+  }
+  function searchMediaProps(obj, depth = 0) {
+    if (!obj || typeof obj !== "object" || depth > 4) return null;
+    if (obj.image_versions2?.candidates && Array.isArray(obj.image_versions2.candidates)) {
+      const sorted = [...obj.image_versions2.candidates].sort((a, b) => (b.width || 0) - (a.width || 0));
+      if (sorted[0]?.url) {
+        return {
+          url: sorted[0].url,
+          width: sorted[0].width || 1080,
+          height: sorted[0].height || 1080
+        };
+      }
+    }
+    if (obj.display_resources && Array.isArray(obj.display_resources)) {
+      const sorted = [...obj.display_resources].sort((a, b) => (b.config_width || 0) - (a.config_width || 0));
+      if (sorted[0]?.src) {
+        return {
+          url: sorted[0].src,
+          width: sorted[0].config_width || 1080,
+          height: sorted[0].config_height || 1080
+        };
+      }
+    }
+    if (typeof obj.display_url === "string" && obj.display_url.startsWith("http")) {
+      return {
+        url: obj.display_url,
+        width: obj.dimensions?.width || 1080,
+        height: obj.dimensions?.height || 1080
+      };
+    }
+    const interestingKeys = ["post", "media", "item", "carousel_media", "node"];
+    for (const key of interestingKeys) {
+      if (obj[key]) {
+        const match = searchMediaProps(obj[key], depth + 1);
+        if (match) return match;
+      }
+    }
+    return null;
+  }
+  function getHighestResolutionUrl(imgElement) {
+    if (!imgElement) return "";
+    try {
+      const fiberCandidate = extractFromReactFiber(imgElement);
+      if (fiberCandidate?.url) {
+        return fiberCandidate.url;
+      }
+    } catch {
+    }
+    const srcset = (typeof imgElement.getAttribute === "function" ? imgElement.getAttribute("srcset") : imgElement.srcset) || "";
+    const candidates = parseSrcset(srcset);
+    if (candidates.length > 0 && candidates[0].url) {
+      if (candidates[0].width >= 1080) {
+        return candidates[0].url;
+      }
+      return upgradeCdnUrl(candidates[0].url);
+    }
+    const fallbackUrl = imgElement.currentSrc || imgElement.src || "";
+    return upgradeCdnUrl(fallbackUrl);
+  }
 
   // src/modules/media-detector.js
   var MediaDetector = class {
@@ -660,6 +790,7 @@
     constructor({ onMediaFound }) {
       this.onMediaFound = onMediaFound;
       this.processedImages = /* @__PURE__ */ new WeakSet();
+      this.mediaEntries = [];
       this.observer = null;
       this._rafScheduled = false;
       this._pendingNodes = [];
@@ -728,11 +859,20 @@
         const isAvatar = img.alt?.toLowerCase().includes("profile picture") || img.closest("header") !== null || img.width < 120 && img.width > 0;
         if (isAvatar) continue;
         this.processedImages.add(img);
-        const container = img.closest("div._aagv") || img.closest('div[role="button"]') || img.closest('a[href^="/p/"]') || img.parentElement;
+        const container = img.closest('a[href^="/p/"]') || img.closest('a[href^="/reel/"]') || img.closest("div._aagv") || img.closest("article") || img.parentElement;
         if (container) {
+          this.mediaEntries.push({ img, container });
           this.onMediaFound(img, container);
         }
       }
+    }
+    /**
+     * Returns all currently detected media entries that are connected to the DOM.
+     * @returns {Array<{img: HTMLImageElement, container: HTMLElement}>}
+     */
+    getMediaEntries() {
+      this.mediaEntries = this.mediaEntries.filter((e) => e.img && document.body.contains(e.img));
+      return this.mediaEntries;
     }
     /**
      * Resolves all media items in the same post or carousel for the given image.
@@ -768,17 +908,141 @@
     }
   };
 
+  // src/modules/gallery-sequencer.js
+  var GallerySequencer = class {
+    constructor() {
+      this.items = [];
+      this.knownImgSet = /* @__PURE__ */ new WeakSet();
+      this.listeners = /* @__PURE__ */ new Set();
+    }
+    /**
+     * Rebuilds and synchronizes the sequence of all discoverable media on the page
+     * sorted in visual reading order (top-to-bottom, left-to-right).
+     *
+     * @param {HTMLElement[]} rootElements
+     * @returns {Array<Object>}
+     */
+    syncSequence(mediaEntries) {
+      if (!mediaEntries || mediaEntries.length === 0) return this.items;
+      const validEntries = mediaEntries.filter((entry) => entry.img && document.body.contains(entry.img));
+      validEntries.sort((a, b) => {
+        const rectA = (a.container || a.img).getBoundingClientRect();
+        const rectB = (b.container || b.img).getBoundingClientRect();
+        const topDiff = rectA.top + window.scrollY - (rectB.top + window.scrollY);
+        if (Math.abs(topDiff) > 20) {
+          return topDiff;
+        }
+        return rectA.left + window.scrollX - (rectB.left + window.scrollX);
+      });
+      const newSequence = [];
+      const seenUrls = /* @__PURE__ */ new Set();
+      validEntries.forEach((entry, postIndex) => {
+        const { img, container } = entry;
+        const post = findClosestPost(container || img);
+        const postImages = post ? findPostImages(post) : [img];
+        if (postImages.length > 1) {
+          postImages.forEach((slideImg, slideIndex) => {
+            const url = getHighestResolutionUrl(slideImg);
+            if (url && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              newSequence.push({
+                id: `${postIndex}-${slideIndex}-${url.slice(-16)}`,
+                img: slideImg,
+                container: container || post,
+                post,
+                url,
+                width: slideImg.naturalWidth || 1080,
+                height: slideImg.naturalHeight || 1080,
+                postIndex,
+                slideIndex,
+                totalSlides: postImages.length,
+                isCarousel: true
+              });
+            }
+          });
+        } else {
+          const url = getHighestResolutionUrl(img);
+          if (url && !seenUrls.has(url)) {
+            seenUrls.add(url);
+            newSequence.push({
+              id: `${postIndex}-0-${url.slice(-16)}`,
+              img,
+              container: container || post,
+              post,
+              url,
+              width: img.naturalWidth || 1080,
+              height: img.naturalHeight || 1080,
+              postIndex,
+              slideIndex: 0,
+              totalSlides: 1,
+              isCarousel: false
+            });
+          }
+        }
+      });
+      this.items = newSequence;
+      this._notify();
+      return this.items;
+    }
+    /**
+     * Finds the sequential index corresponding to a specific image element or URL.
+     *
+     * @param {HTMLImageElement} targetImg
+     * @returns {number} Index, or 0 if not found
+     */
+    findIndex(targetImg) {
+      if (!targetImg || this.items.length === 0) return 0;
+      const targetSrc = targetImg.currentSrc || targetImg.src || "";
+      const index = this.items.findIndex((item) => {
+        if (item.img === targetImg) return true;
+        if (targetSrc && item.url.includes(targetSrc)) return true;
+        return false;
+      });
+      return index !== -1 ? index : 0;
+    }
+    /**
+     * Returns item at index.
+     * @param {number} index
+     * @returns {Object|null}
+     */
+    getItem(index) {
+      return this.items[index] || null;
+    }
+    /**
+     * Total number of items in sequence.
+     * @returns {number}
+     */
+    get length() {
+      return this.items.length;
+    }
+    subscribe(listener) {
+      this.listeners.add(listener);
+      return () => this.listeners.delete(listener);
+    }
+    _notify() {
+      for (const listener of this.listeners) {
+        try {
+          listener(this.items);
+        } catch (e) {
+          console.error("[GallerySequencer] Error in listener:", e);
+        }
+      }
+    }
+  };
+
   // src/content.js
   var ImmerseApp = class {
     constructor() {
       this.overlay = null;
       this.hoverButtons = null;
       this.mediaDetector = null;
+      this.sequencer = null;
       this.initialized = false;
     }
     async init() {
       if (this.initialized) return;
       const settings = await settingsStore.init();
+      this.sequencer = new GallerySequencer();
       this.overlay = new ViewerOverlay(settings);
       this.hoverButtons = new HoverButtonManager({
         onTrigger: (img, container) => this.handleTrigger(img, container),
@@ -789,6 +1053,10 @@
           const currentSettings = settingsStore.get();
           if (currentSettings.enabled) {
             this.hoverButtons.attach(img, container);
+            if (this.overlay?.isOpen) {
+              const updatedItems = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
+              this.overlay.updateSequence(updatedItems);
+            }
           }
         }
       });
@@ -801,7 +1069,8 @@
             sendResponse({
               active: true,
               settings: settingsStore.get(),
-              overlayOpen: this.overlay?.isOpen || false
+              overlayOpen: this.overlay?.isOpen || false,
+              totalItems: this.sequencer?.length || 0
             });
           } else if (message.type === "SETTINGS_CHANGED") {
             this.handleSettingsChange(message.settings);
@@ -814,10 +1083,10 @@
         this.mediaDetector.start();
       }
       this.initialized = true;
-      console.log("[Immerse] Instagram High-Resolution Extension loaded.");
+      console.log("[Immerse] Instagram High-Resolution Extension loaded with Liquid Glass UI.");
     }
     /**
-     * Handles opening the fullscreen overlay when a trigger (button or image) is activated.
+     * Handles opening the fullscreen overlay with the complete page sequence.
      *
      * @param {HTMLImageElement} targetImg
      * @param {HTMLElement} container
@@ -825,16 +1094,14 @@
     handleTrigger(targetImg, container) {
       const settings = settingsStore.get();
       if (!settings.enabled) return;
-      const items = this.mediaDetector.resolvePostMediaItems(targetImg, container);
-      let initialIndex = 0;
-      if (items.length > 1) {
-        const targetSrc = targetImg.currentSrc || targetImg.src;
-        const foundIdx = items.findIndex((item) => item.originalElement === targetImg || targetSrc && item.url.includes(targetSrc));
-        if (foundIdx !== -1) {
-          initialIndex = foundIdx;
-        }
+      const sequenceItems = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
+      if (sequenceItems.length > 0) {
+        const initialIndex = this.sequencer.findIndex(targetImg);
+        this.overlay.open(sequenceItems, initialIndex);
+      } else {
+        const items = this.mediaDetector.resolvePostMediaItems(targetImg, container);
+        this.overlay.open(items, 0);
       }
-      this.overlay.open(items, initialIndex);
     }
     handleSettingsChange(newSettings) {
       if (newSettings.enabled) {

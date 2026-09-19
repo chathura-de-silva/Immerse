@@ -14,6 +14,7 @@ export class MediaDetector {
   constructor({ onMediaFound }) {
     this.onMediaFound = onMediaFound;
     this.processedImages = new WeakSet();
+    this.mediaEntries = []; // Array of { img, container }
     this.observer = null;
     this._rafScheduled = false;
     this._pendingNodes = [];
@@ -94,22 +95,33 @@ export class MediaDetector {
       // Filter out avatars, icons, and small UI thumbnails
       const isAvatar = img.alt?.toLowerCase().includes('profile picture') ||
                        img.closest('header') !== null ||
-                       img.width < 120 && img.width > 0;
+                       (img.width < 120 && img.width > 0);
 
       if (isAvatar) continue;
 
       this.processedImages.add(img);
 
-      // Find the visual wrapper to anchor the button
-      const container = img.closest('div._aagv') ||
-                        img.closest('div[role="button"]') ||
-                        img.closest('a[href^="/p/"]') ||
+      // Find the visual wrapper / tile anchor
+      const container = img.closest('a[href^="/p/"]') ||
+                        img.closest('a[href^="/reel/"]') ||
+                        img.closest('div._aagv') ||
+                        img.closest('article') ||
                         img.parentElement;
 
       if (container) {
+        this.mediaEntries.push({ img, container });
         this.onMediaFound(img, container);
       }
     }
+  }
+
+  /**
+   * Returns all currently detected media entries that are connected to the DOM.
+   * @returns {Array<{img: HTMLImageElement, container: HTMLElement}>}
+   */
+  getMediaEntries() {
+    this.mediaEntries = this.mediaEntries.filter(e => e.img && document.body.contains(e.img));
+    return this.mediaEntries;
   }
 
   /**
@@ -130,7 +142,6 @@ export class MediaDetector {
       return [{ url: getHighestResolutionUrl(img), originalElement: img }];
     }
 
-    // Map each image to highest resolution URL
     const items = [];
     const seenUrls = new Set();
 

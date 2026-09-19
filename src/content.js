@@ -1,19 +1,21 @@
 /**
  * content.js
  * Main entry point for the Immerse Instagram extension.
- * Connects MediaDetector, HoverButtonManager, ViewerOverlay, and SettingsStore.
+ * Connects MediaDetector, HoverButtonManager, ViewerOverlay, GallerySequencer, and SettingsStore.
  */
 
 import { settingsStore } from './modules/settings-store.js';
 import { ViewerOverlay } from './modules/viewer-overlay.js';
 import { HoverButtonManager } from './modules/hover-button.js';
 import { MediaDetector } from './modules/media-detector.js';
+import { GallerySequencer } from './modules/gallery-sequencer.js';
 
 class ImmerseApp {
   constructor() {
     this.overlay = null;
     this.hoverButtons = null;
     this.mediaDetector = null;
+    this.sequencer = null;
     this.initialized = false;
   }
 
@@ -22,6 +24,9 @@ class ImmerseApp {
 
     // Load user preferences
     const settings = await settingsStore.init();
+
+    // Instantiate Gallery Sequencer for desktop folder-like navigation
+    this.sequencer = new GallerySequencer();
 
     // Instantiate Lightbox Overlay
     this.overlay = new ViewerOverlay(settings);
@@ -38,6 +43,12 @@ class ImmerseApp {
         const currentSettings = settingsStore.get();
         if (currentSettings.enabled) {
           this.hoverButtons.attach(img, container);
+
+          // If overlay is open, synchronize new images into the active sequence
+          if (this.overlay?.isOpen) {
+            const updatedItems = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
+            this.overlay.updateSequence(updatedItems);
+          }
         }
       }
     });
@@ -54,13 +65,14 @@ class ImmerseApp {
           sendResponse({
             active: true,
             settings: settingsStore.get(),
-            overlayOpen: this.overlay?.isOpen || false
+            overlayOpen: this.overlay?.isOpen || false,
+            totalItems: this.sequencer?.length || 0
           });
         } else if (message.type === 'SETTINGS_CHANGED') {
           this.handleSettingsChange(message.settings);
           sendResponse({ success: true });
         }
-        return true; // Keep channel open
+        return true;
       });
     }
 
@@ -70,11 +82,11 @@ class ImmerseApp {
     }
 
     this.initialized = true;
-    console.log('[Immerse] Instagram High-Resolution Extension loaded.');
+    console.log('[Immerse] Instagram High-Resolution Extension loaded with Liquid Glass UI.');
   }
 
   /**
-   * Handles opening the fullscreen overlay when a trigger (button or image) is activated.
+   * Handles opening the fullscreen overlay with the complete page sequence.
    *
    * @param {HTMLImageElement} targetImg
    * @param {HTMLElement} container
@@ -83,19 +95,17 @@ class ImmerseApp {
     const settings = settingsStore.get();
     if (!settings.enabled) return;
 
-    const items = this.mediaDetector.resolvePostMediaItems(targetImg, container);
+    // Synchronize the complete sequence of all posts on the page
+    const sequenceItems = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
 
-    // Find index of targeted image
-    let initialIndex = 0;
-    if (items.length > 1) {
-      const targetSrc = targetImg.currentSrc || targetImg.src;
-      const foundIdx = items.findIndex(item => item.originalElement === targetImg || (targetSrc && item.url.includes(targetSrc)));
-      if (foundIdx !== -1) {
-        initialIndex = foundIdx;
-      }
+    if (sequenceItems.length > 0) {
+      const initialIndex = this.sequencer.findIndex(targetImg);
+      this.overlay.open(sequenceItems, initialIndex);
+    } else {
+      // Fallback to single post items if sequence was empty
+      const items = this.mediaDetector.resolvePostMediaItems(targetImg, container);
+      this.overlay.open(items, 0);
     }
-
-    this.overlay.open(items, initialIndex);
   }
 
   handleSettingsChange(newSettings) {

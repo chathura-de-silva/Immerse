@@ -7,13 +7,15 @@ A lightweight, non-intrusive browser extension (Manifest V3) that simulates larg
 ## ✨ Features
 
 - **Non-Intrusive Integration**: Preserves Instagram's native feed layout, styling, and functionality without forced page reflows.
-- **Glassmorphic Hover Button**: A subtle, semi-transparent `HD` button smoothly appears when hovering over photos in the feed, profile grids, carousels, and Explore page, and disappears when not in use.
-- **Max-Resolution Engine**: Parses complex `srcset` attributes and Instagram CDN URLs to load the highest available resolution image asset instead of the downscaled feed thumbnail.
+- **Liquid Glass Design Language**: Ultra-modern refractive glassmorphism with specular inner highlights, optical blur (`backdrop-filter: blur(24px)`), atmospheric glow, and spring physics transitions.
+- **Tile-Wide Hover Activation**: The `HD` button smoothly appears when hovering anywhere across the image tile (grid item, explore card, or feed post), not just near the corner.
+- **Multi-Tier Resolution Engine**: Inspects React Fiber GraphQL models (`image_versions2.candidates`, `display_resources`), parses `srcset` descriptors, and upgrades CDN tokens to guarantee the absolute highest resolution available (up to 1440px master assets).
+- **Desktop-Style Grid Navigation**: Browse through all images on the page sequentially with `←` / `→` arrow keys, exactly like navigating through photos in a desktop folder (Windows Photos / macOS Preview).
 - **Intuitive Fullscreen Lightbox**:
-  - **Pan & Zoom**: Smooth mouse wheel zooming anchored to the cursor position (0.5× to 6×) and grab-to-pan when zoomed in.
+  - **Pan & Zoom**: Smooth mouse wheel zooming anchored to the cursor position (0.5× to 6×) and grab-to-pan when inspecting details.
   - **Double Click**: Quick toggle between 100% fit and 2.5× zoom.
-  - **Multi-Photo Carousels**: Seamless navigation through all photos of a carousel post with prev/next buttons or keyboard arrow keys.
-  - **Resolution Badge**: Live readout of the loaded image's actual pixel dimensions (e.g. `1080 × 1350 • Highest Quality`).
+  - **Auto-Hiding Controls**: Controls gently fade out when idle (after 3.2s) for an unobscured view, reappearing instantly on mouse movement.
+  - **Resolution Badge**: Live readout of the loaded image's actual pixel dimensions with pulsing green HD indicator.
   - **Copyright Protection & Anti-Download Shielding**: Actively respects creator copyrights by preventing right-click "Save As", disabling drag-and-drop extraction, blocking save keyboard shortcuts (Ctrl+S / Cmd+S), and shielding images behind a non-interactive layer.
   - **True Fullscreen**: Toggle native browser fullscreen (`F`).
 - **Customizable Settings Popup**: Toggle features, select trigger behavior (Button + Click, Button Only, or Click Only), and adjust preferences.
@@ -25,8 +27,8 @@ A lightweight, non-intrusive browser extension (Manifest V3) that simulates larg
 | Key | Action |
 | --- | --- |
 | `Esc` | Close fullscreen viewer |
+| `←` / `→` (or `J` / `L`) | Previous / Next image across the entire grid or feed |
 | `F` | Toggle true fullscreen mode |
-| `←` / `→` | Previous / Next carousel photo |
 | `0` | Reset zoom and pan |
 | `+` / `-` | Zoom in / Zoom out |
 | `Scroll` | Smooth zoom towards mouse pointer |

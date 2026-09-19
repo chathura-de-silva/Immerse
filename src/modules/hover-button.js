@@ -1,6 +1,7 @@
 /**
  * hover-button.js
- * Injects sleek, disappearing glassmorphism HD buttons over Instagram image posts.
+ * Injects sleek, disappearing liquid-glass HD buttons over Instagram image posts
+ * and activates whenever the mouse hovers anywhere on the tile.
  */
 
 import { createElement } from '../utils/dom-helpers.js';
@@ -14,26 +15,36 @@ export class HoverButtonManager {
   constructor({ onTrigger, getSettings }) {
     this.onTrigger = onTrigger;
     this.getSettings = getSettings;
-    this.attachedContainers = new WeakSet();
+    this.attachedTiles = new WeakSet();
   }
 
   /**
-   * Attaches a hover trigger to an image or its parent container.
+   * Attaches a hover trigger to an image or its parent tile in the grid or feed.
    *
    * @param {HTMLImageElement} imgElement
    * @param {HTMLElement} container
    */
   attach(imgElement, container) {
-    if (!container || this.attachedContainers.has(container)) return;
-    this.attachedContainers.add(container);
+    if (!imgElement) return;
 
-    // Ensure container has positioning context
-    const computedStyle = window.getComputedStyle(container);
-    if (computedStyle.position === 'static') {
-      container.style.position = 'relative';
+    // Resolve the outermost interactive tile (e.g. grid <a> link or article)
+    const tile = imgElement.closest('a[href^="/p/"]') ||
+                 imgElement.closest('a[href^="/reel/"]') ||
+                 imgElement.closest('div._aabd') ||
+                 imgElement.closest('article') ||
+                 container ||
+                 imgElement.parentElement;
+
+    if (!tile || this.attachedTiles.has(tile)) return;
+    this.attachedTiles.add(tile);
+
+    // Ensure tile has relative positioning context for placement
+    const tileStyle = window.getComputedStyle(tile);
+    if (tileStyle.position === 'static') {
+      tile.style.position = 'relative';
     }
 
-    // Build hover button container
+    // Build liquid-glass button container
     const btnContainer = createElement('div', {
       className: 'immerse-hover-btn-container'
     });
@@ -42,8 +53,8 @@ export class HoverButtonManager {
       className: 'immerse-hover-btn',
       attributes: {
         type: 'button',
-        title: 'Open in High-Resolution Fullscreen (Immerse)',
-        'aria-label': 'Open in High-Resolution Fullscreen'
+        title: 'View in Ultra-HD Fullscreen (Immerse)',
+        'aria-label': 'View in Ultra-HD Fullscreen'
       },
       innerHTML: `
         <svg viewBox="0 0 24 24" fill="none">
@@ -53,44 +64,52 @@ export class HoverButtonManager {
       `
     });
 
+    // Trigger action on button click
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      this.onTrigger(imgElement, container);
+      this.onTrigger(imgElement, tile);
     });
 
     btnContainer.appendChild(btn);
 
-    // Hover fade-in / fade-out listeners
+    // Tile-wide hover detection: triggers anywhere on the tile
     let hideTimer = null;
-    container.addEventListener('mouseenter', () => {
-      if (hideTimer) clearTimeout(hideTimer);
+    const showBtn = () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
       const settings = this.getSettings ? this.getSettings() : { enabled: true };
       if (settings.enabled !== false) {
         btn.classList.add('immerse-visible');
       }
-    });
+    };
 
-    container.addEventListener('mouseleave', () => {
+    const hideBtn = () => {
+      if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(() => {
         btn.classList.remove('immerse-visible');
-      }, 150);
-    });
+      }, 120);
+    };
 
-    // Optional direct image click trigger if enabled in settings
+    tile.addEventListener('mouseenter', showBtn, { passive: true });
+    tile.addEventListener('mousemove', showBtn, { passive: true });
+    tile.addEventListener('mouseleave', hideBtn, { passive: true });
+
+    // Optional direct image / tile click trigger if enabled in settings
     imgElement.addEventListener('click', (e) => {
       const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: 'both' };
       if (!settings.enabled) return;
 
       if (settings.triggerMode === 'image-click' || settings.triggerMode === 'both') {
-        // Prevent opening Instagram's native modal only when user explicitly intended to expand
         e.preventDefault();
         e.stopPropagation();
-        this.onTrigger(imgElement, container);
+        this.onTrigger(imgElement, tile);
       }
     }, true);
 
-    container.appendChild(btnContainer);
+    tile.appendChild(btnContainer);
   }
 }
