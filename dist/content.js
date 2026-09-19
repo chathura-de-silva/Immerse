@@ -530,6 +530,8 @@
       });
       const counter = createElement("div", { className: "immerse-counter" });
       counter.append(counterText);
+      const headerLeft = createElement("div", { className: "immerse-header-left" });
+      headerLeft.append(badge, counter);
       const controls = createElement("div", { className: "immerse-controls" });
       const zoomResetBtn = createElement("button", {
         className: "immerse-btn immerse-btn-zoom",
@@ -550,7 +552,7 @@
         events: { click: () => this.close() }
       });
       controls.append(zoomResetBtn, fullscreenBtn, closeBtn);
-      header.append(badge, counter, controls);
+      header.append(headerLeft, controls);
       const stage = createElement("div", {
         className: "immerse-stage",
         events: {
@@ -935,18 +937,20 @@
         const isSlide = this.options.transitionStyle === "slide";
         if (hasPrev) {
           this._isTransitioning = true;
-          let incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
+          const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
+          const slideOffset = dir * viewWidth;
+          let incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
           let outgoingEndTransform = "";
           let outgoingEndOpacity = "0";
           let easing = "";
           let duration = "";
           if (isSlide) {
-            outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0)`;
+            outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0)`;
             outgoingEndOpacity = "1";
             easing = "cubic-bezier(0.2, 0, 0, 1)";
             duration = "0.34s";
           } else {
-            outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0) scale(0.92)`;
+            outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0) scale(0.92)`;
             outgoingEndOpacity = "0";
             easing = "cubic-bezier(0.16, 1, 0.3, 1)";
             duration = "0.35s";

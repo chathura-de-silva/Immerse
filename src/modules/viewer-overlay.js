@@ -105,6 +105,10 @@ export class ViewerOverlay {
     const counter = createElement('div', { className: 'immerse-counter' });
     counter.append(counterText);
 
+    // Header left container (anchors info pills on the left)
+    const headerLeft = createElement('div', { className: 'immerse-header-left' });
+    headerLeft.append(badge, counter);
+
     // Header controls group
     const controls = createElement('div', { className: 'immerse-controls' });
 
@@ -133,7 +137,7 @@ export class ViewerOverlay {
     });
 
     controls.append(zoomResetBtn, fullscreenBtn, closeBtn);
-    header.append(badge, counter, controls);
+    header.append(headerLeft, controls);
 
     // Stage area
     const stage = createElement('div', {
@@ -576,23 +580,31 @@ export class ViewerOverlay {
 
       if (hasPrev) {
         this._isTransitioning = true;
-        let incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
+        // In CSS, percentage translate on an image translates only by the image's own width,
+        // which leaves portrait/square images halfway inside the viewport.
+        // Using the full viewport width guarantees the previous image transitions completely out of the screen.
+        const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
+        const slideOffset = dir * viewWidth;
+
+        let incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
         let outgoingEndTransform = '';
         let outgoingEndOpacity = '0';
         let easing = '';
         let duration = '';
 
         if (isSlide) {
-          // Continuous 100% Horizontal Slide (Filmstrip)
-          outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0)`;
+          // 100% Continuous Horizontal Slide (Filmstrip):
+          // Incoming slide enters from viewport edge into center
+          // Outgoing slide transitions COMPLETELY out of the screen (-viewportWidth) at full opacity
+          outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0)`;
           outgoingEndOpacity = '1';
           easing = 'cubic-bezier(0.2, 0, 0, 1)';
           duration = '0.34s';
         } else {
           // Authentic Depth Parallax Slide:
           // Incoming slide sweeps in from edge to center
-          // Outgoing slide moves completely off-screen (-100%) while receding into depth (scale 0.92) and smoothly fading to 0
-          outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0) scale(0.92)`;
+          // Outgoing slide moves completely off-screen (-viewportWidth) while receding into depth (scale 0.92) and smoothly fading to 0
+          outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0) scale(0.92)`;
           outgoingEndOpacity = '0';
           easing = 'cubic-bezier(0.16, 1, 0.3, 1)';
           duration = '0.35s';

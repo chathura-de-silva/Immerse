@@ -53,9 +53,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  box-sizing: border-box;
   padding: 16px 28px;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
   transition: opacity 0.35s var(--immerse-smooth), transform 0.35s var(--immerse-smooth);
+}
+
+.immerse-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 /* Auto-hide cursor when completely idle */
@@ -155,11 +163,13 @@
   transform: translateY(-2px);
 }
 
-/* Header Controls */
+/* Header Controls - Anchored to the top right corner at all times */
 .immerse-controls {
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .immerse-btn {
