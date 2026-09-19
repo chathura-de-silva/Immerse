@@ -182,6 +182,9 @@
       this.maxScale = 6;
       this._idleTimer = null;
       this._cursorTimer = null;
+      this._spinnerTimeout = null;
+      this._badgeTextTimeout = null;
+      this._counterTextTimeout = null;
       this._lastNavTime = 0;
       this.dom = null;
       this._handleKeyDown = this._handleKeyDown.bind(this);
@@ -211,14 +214,19 @@
         } }
       });
       const header = createElement("div", { className: "immerse-header" });
-      const badge = createElement("div", {
-        className: "immerse-badge",
-        innerHTML: '<span class="immerse-badge-dot"></span><span class="immerse-badge-text">Ultra-HD</span>'
+      const badgeDot = createElement("span", { className: "immerse-badge-dot" });
+      const badgeText = createElement("span", {
+        className: "immerse-badge-text",
+        textContent: "Ultra-HD"
       });
-      const counter = createElement("div", {
-        className: "immerse-counter",
+      const badge = createElement("div", { className: "immerse-badge" });
+      badge.append(badgeDot, badgeText);
+      const counterText = createElement("span", {
+        className: "immerse-counter-text",
         textContent: "Photo 1"
       });
+      const counter = createElement("div", { className: "immerse-counter" });
+      counter.append(counterText);
       const controls = createElement("div", { className: "immerse-controls" });
       const zoomResetBtn = createElement("button", {
         className: "immerse-btn immerse-btn-zoom",
@@ -279,10 +287,15 @@
         }
       });
       const imgWrapper = createElement("div", { className: "immerse-image-wrapper" });
-      const img = createElement("img", {
-        className: "immerse-image",
+      const imgPrev = createElement("img", {
+        className: "immerse-image immerse-image-prev",
         attributes: { draggable: "false" },
-        style: { pointerEvents: "none" }
+        style: { opacity: "0", display: "none", pointerEvents: "none" }
+      });
+      const img = createElement("img", {
+        className: "immerse-image immerse-image-curr",
+        attributes: { draggable: "false" },
+        style: { opacity: "0", pointerEvents: "none" }
       });
       const shield = createElement("div", {
         className: "immerse-shield",
@@ -292,7 +305,7 @@
         className: "immerse-spinner",
         innerHTML: '<div class="immerse-spinner-ring"></div>'
       });
-      imgWrapper.append(img, shield, spinner);
+      imgWrapper.append(imgPrev, img, shield, spinner);
       const carouselCtrl = createElement("div", {
         className: "immerse-carousel-controller",
         style: { display: "none" }
@@ -346,8 +359,10 @@
         backdrop,
         header,
         badge,
-        badgeText: badge.querySelector(".immerse-badge-text"),
+        badgeDot,
+        badgeText,
         counter,
+        counterText,
         zoomResetBtn,
         fullscreenBtn,
         closeBtn,
@@ -355,6 +370,7 @@
         prevPostBtn,
         nextPostBtn,
         imgWrapper,
+        imgPrev,
         img,
         shield,
         spinner,
@@ -411,6 +427,18 @@
         clearTimeout(this._cursorTimer);
         this._cursorTimer = null;
       }
+      if (this._spinnerTimeout) {
+        clearTimeout(this._spinnerTimeout);
+        this._spinnerTimeout = null;
+      }
+      if (this._badgeTextTimeout) {
+        clearTimeout(this._badgeTextTimeout);
+        this._badgeTextTimeout = null;
+      }
+      if (this._counterTextTimeout) {
+        clearTimeout(this._counterTextTimeout);
+        this._counterTextTimeout = null;
+      }
       this.isOpen = false;
       this.resetTransform();
       if (document.fullscreenElement) {
@@ -440,7 +468,41 @@
       }
     }
     /**
-     * Loads the current post and current slide into view.
+     * Smoothly updates resolution badge text with a liquid glide transition.
+     *
+     * @param {string} text
+     */
+    _updateBadgeText(text) {
+      if (!this.dom?.badgeText) return;
+      if (this.dom.badgeText.textContent === text) return;
+      if (this._badgeTextTimeout) clearTimeout(this._badgeTextTimeout);
+      this.dom.badgeText.classList.add("immerse-text-fading");
+      this._badgeTextTimeout = setTimeout(() => {
+        if (this.dom?.badgeText) {
+          this.dom.badgeText.textContent = text;
+          this.dom.badgeText.classList.remove("immerse-text-fading");
+        }
+      }, 120);
+    }
+    /**
+     * Smoothly updates photo counter text with a liquid glide transition.
+     *
+     * @param {string} text
+     */
+    _updateCounterText(text) {
+      if (!this.dom?.counterText) return;
+      if (this.dom.counterText.textContent === text) return;
+      if (this._counterTextTimeout) clearTimeout(this._counterTextTimeout);
+      this.dom.counterText.classList.add("immerse-text-fading");
+      this._counterTextTimeout = setTimeout(() => {
+        if (this.dom?.counterText) {
+          this.dom.counterText.textContent = text;
+          this.dom.counterText.classList.remove("immerse-text-fading");
+        }
+      }, 120);
+    }
+    /**
+     * Loads the current post and current slide into view with seamless GPU-accelerated crossfading.
      */
     loadCurrent() {
       const post = this.posts[this.currentPostIndex];
@@ -451,37 +513,69 @@
         this.onLoadMore();
       }
       this.resetTransform();
-      this.dom.spinner.style.display = "block";
-      this.dom.img.style.opacity = "0";
       this._updateHeaderCounter();
       this._updateCarouselControls(post);
-      this.dom.badgeText.textContent = "Fetching Ultra-HD...";
-      const tempImg = new Image();
       const targetPostIndex = this.currentPostIndex;
       const targetSlideIndex = this.currentSlideIndex;
-      tempImg.onload = () => {
+      if (this.dom.img.src && this.dom.img.style.opacity !== "0") {
+        this.dom.imgPrev.src = this.dom.img.src;
+        this.dom.imgPrev.style.display = "block";
+        this.dom.imgPrev.style.opacity = "1";
+      }
+      this.dom.img.style.opacity = "0";
+      if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
+      this._spinnerTimeout = setTimeout(() => {
+        if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+          this.dom.spinner.classList.add("immerse-spinner-visible");
+          this.dom.badgeDot.classList.add("immerse-badge-dot-loading");
+          this._updateBadgeText("Loading Ultra-HD...");
+        }
+      }, 220);
+      const tempImg = new Image();
+      const onReady = async () => {
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
-        this.resetTransform();
+        if (this._spinnerTimeout) {
+          clearTimeout(this._spinnerTimeout);
+          this._spinnerTimeout = null;
+        }
+        if (tempImg.decode) {
+          await tempImg.decode().catch(() => {
+          });
+        }
+        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
         this.dom.img.src = slide.url;
-        this.dom.img.style.opacity = "1";
-        this.dom.spinner.style.display = "none";
-        const w = tempImg.naturalWidth;
-        const h = tempImg.naturalHeight;
-        this.dom.badgeText.textContent = `${w} \xD7 ${h} \u2022 Highest Quality`;
-        this._preloadAdjacent();
+        requestAnimationFrame(() => {
+          this.dom.img.style.opacity = "1";
+          this.dom.imgPrev.style.opacity = "0";
+          this.dom.spinner.classList.remove("immerse-spinner-visible");
+          this.dom.badgeDot.classList.remove("immerse-badge-dot-loading");
+          const w = tempImg.naturalWidth;
+          const h = tempImg.naturalHeight;
+          this._updateBadgeText(`${w} \xD7 ${h} \u2022 Highest Quality`);
+          setTimeout(() => {
+            if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+              this.dom.imgPrev.style.display = "none";
+            }
+          }, 320);
+          this._preloadAdjacent();
+        });
       };
+      tempImg.onload = onReady;
       tempImg.onerror = () => {
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
-        this.dom.spinner.style.display = "none";
-        this.dom.badgeText.textContent = "HD Ready";
+        if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
+        this.dom.spinner.classList.remove("immerse-spinner-visible");
+        this.dom.badgeDot.classList.remove("immerse-badge-dot-loading");
         this.dom.img.src = slide.url;
         this.dom.img.style.opacity = "1";
+        this.dom.imgPrev.style.opacity = "0";
+        this._updateBadgeText("HD Ready");
       };
       tempImg.src = slide.url;
     }
     _updateHeaderCounter() {
       const currentPostNum = this.currentPostIndex + 1;
-      this.dom.counter.textContent = `Photo ${currentPostNum}`;
+      this._updateCounterText(`Photo ${currentPostNum}`);
       this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
       this.dom.nextPostBtn.disabled = false;
     }
@@ -530,7 +624,7 @@
       if (this.currentPostIndex < this.posts.length - 1) {
         this.goToPost(this.currentPostIndex + 1, 0);
       } else if (this.onLoadMore) {
-        this.dom.counter.textContent = `Photo ${this.currentPostIndex + 1} \u2022 Loading...`;
+        this._updateCounterText(`Photo ${this.currentPostIndex + 1} \u2022 Loading...`);
         this._waitingForNextPost = true;
         this.onLoadMore();
       }
@@ -577,13 +671,16 @@
       this.panX = 0;
       this.panY = 0;
       this._applyTransform(true);
+      if (this.dom?.imgPrev) {
+        this.dom.imgPrev.style.transform = "translate(0px, 0px) scale(1)";
+      }
     }
     _applyTransform(smooth = false) {
       if (!this.dom?.img) return;
       if (smooth) {
-        this.dom.img.style.transition = "transform 0.22s cubic-bezier(0.2, 0, 0, 1)";
+        this.dom.img.style.transition = "transform 0.22s cubic-bezier(0.2, 0, 0, 1), opacity 0.28s var(--immerse-smooth)";
       } else {
-        this.dom.img.style.transition = "none";
+        this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
       }
       this.dom.img.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
       this.dom.zoomResetBtn.textContent = `${Math.round(this.scale * 100)}%`;
@@ -737,7 +834,8 @@
       if (isNearScreenEdge) {
         return false;
       }
-      const rect = this.dom.img.getBoundingClientRect();
+      const activeImg = this.dom.img.style.opacity !== "0" || !this.dom.imgPrev?.src ? this.dom.img : this.dom.imgPrev;
+      const rect = activeImg.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return false;
       return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
     }
