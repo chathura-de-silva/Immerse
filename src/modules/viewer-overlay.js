@@ -28,7 +28,10 @@ export class ViewerOverlay {
     this.posts = []; // Array of { id, tile, slides: [{ url, width, height, element }] }
     this.currentPostIndex = 0;
     this.currentSlideIndex = 0;
-    this._waitingForNextPost = false;
+    this._pendingNavigation = null; // { type: 'post' | 'slide', direction: number, fromPostIndex?: number, targetSlideIndex?: number }
+    this._navPollInterval = null;
+    this._loadMoreRetryInterval = null;
+    this._activeLoadingImg = null;
 
     // Pan & Zoom state
     this.scale = 1;
@@ -344,6 +347,24 @@ export class ViewerOverlay {
       this._counterTextTimeout = null;
     }
 
+    if (this._waitingTimeout) {
+      clearTimeout(this._waitingTimeout);
+      this._waitingTimeout = null;
+    }
+
+    if (this._navPollInterval) {
+      clearInterval(this._navPollInterval);
+      this._navPollInterval = null;
+    }
+
+    if (this._loadMoreRetryInterval) {
+      clearInterval(this._loadMoreRetryInterval);
+      this._loadMoreRetryInterval = null;
+    }
+
+    this._pendingNavigation = null;
+    this._activeLoadingImg = null;
+
     this.isOpen = false;
     this._completeTransitionImmediately();
     this.resetTransform();
@@ -374,7 +395,6 @@ export class ViewerOverlay {
    */
   updatePosts(newPosts) {
     if (!newPosts || newPosts.length === 0) return;
-    const oldLength = this.posts.length;
 
     // Maintain currentPostIndex aligned with the currently active post
     const activePost = this.posts[this.currentPostIndex];
@@ -387,20 +407,29 @@ export class ViewerOverlay {
 
     this.posts = newPosts;
 
-    if (this._waitingForNextPost && this.posts.length > oldLength) {
-      this._waitingForNextPost = false;
-      if (this._waitingTimeout) {
-        clearTimeout(this._waitingTimeout);
-        this._waitingTimeout = null;
+    // Auto-advance to pending post as soon as new post arrives in feed
+    if (this._pendingNavigation && this._pendingNavigation.type === 'post') {
+      const nextTargetIdx = this._pendingNavigation.fromPostIndex + 1;
+      if (this.posts.length > nextTargetIdx) {
+        this._pendingNavigation = null;
+        if (this._waitingTimeout) {
+          clearTimeout(this._waitingTimeout);
+          this._waitingTimeout = null;
+        }
+        if (this._loadMoreRetryInterval) {
+          clearInterval(this._loadMoreRetryInterval);
+          this._loadMoreRetryInterval = null;
+        }
+        this.dom.spinner.classList.remove('immerse-spinner-visible');
+        this.goToPost(nextTargetIdx, 0);
+        return;
       }
-      this.dom.spinner.classList.remove('immerse-spinner-visible');
-      this.goToPost(oldLength, 0);
-    } else {
-      this._updateHeaderCounter();
-      const curr = this.posts[this.currentPostIndex];
-      if (curr) {
-        this._updateCarouselControls(curr);
-      }
+    }
+
+    this._updateHeaderCounter();
+    const curr = this.posts[this.currentPostIndex];
+    if (curr) {
+      this._updateCarouselControls(curr);
     }
   }
 
@@ -552,7 +581,14 @@ export class ViewerOverlay {
       }
     }, 80);
 
+    if (this._activeLoadingImg) {
+      this._activeLoadingImg.onload = null;
+      this._activeLoadingImg.onerror = null;
+      this._activeLoadingImg = null;
+    }
+
     const tempImg = new Image();
+    this._activeLoadingImg = tempImg;
 
     const onReady = async () => {
       if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
@@ -562,6 +598,7 @@ export class ViewerOverlay {
         this._spinnerTimeout = null;
       }
       this._isLoading = false;
+      this._activeLoadingImg = null;
       this.dom.spinner.classList.remove('immerse-spinner-visible');
 
       // Ensure bitmap is fully decoded in memory before swapping
@@ -580,44 +617,52 @@ export class ViewerOverlay {
 
       if (hasPrev) {
         this._isTransitioning = true;
-        // In CSS, percentage translate on an image translates only by the image's own width,
-        // which leaves portrait/square images halfway inside the viewport.
-        // Using the full viewport width guarantees the previous image transitions completely out of the screen.
         const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
         const slideOffset = dir * viewWidth;
 
-        let incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
+        let incomingStartTransform = '';
         let outgoingEndTransform = '';
         let outgoingEndOpacity = '0';
+        let outgoingFilter = 'none';
+        let incomingShadow = 'none';
         let easing = '';
         let duration = '';
 
         if (isSlide) {
-          // 100% Continuous Horizontal Slide (Filmstrip):
-          // Incoming slide enters from viewport edge into center
-          // Outgoing slide transitions COMPLETELY out of the screen (-viewportWidth) at full opacity
+          // 100% Mechanical Filmstrip Slide:
+          // Both slides translate across the entire viewport in lockstep at full opacity without depth scale
+          incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
           outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0)`;
           outgoingEndOpacity = '1';
+          outgoingFilter = 'none';
+          incomingShadow = 'none';
           easing = 'cubic-bezier(0.2, 0, 0, 1)';
           duration = '0.34s';
         } else {
-          // Authentic Depth Parallax Slide:
-          // Incoming slide sweeps in from edge to center
-          // Outgoing slide moves completely off-screen (-viewportWidth) while receding into depth (scale 0.92) and smoothly fading to 0
-          outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0) scale(0.92)`;
+          // Authentic Multi-Plane 3D Depth Parallax:
+          // Incoming foreground slide sweeps in with deep ambient drop shadow
+          // Outgoing background slide recedes into depth (scale 0.84), moves at slower parallax speed (28%), dims and fades out
+          incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
+          outgoingEndTransform = `translate3d(${-dir * Math.round(viewWidth * 0.28)}px, 0, 0) scale(0.84)`;
           outgoingEndOpacity = '0';
+          outgoingFilter = 'brightness(0.65)';
+          incomingShadow = dir > 0
+            ? '-24px 0 60px rgba(0, 0, 0, 0.75)'
+            : '24px 0 60px rgba(0, 0, 0, 0.75)';
           easing = 'cubic-bezier(0.16, 1, 0.3, 1)';
-          duration = '0.35s';
+          duration = '0.40s';
         }
 
         // Apply starting states immediately without transition
         this.dom.img.style.transition = 'none';
         this.dom.img.style.transform = incomingStartTransform;
+        this.dom.img.style.boxShadow = incomingShadow;
         this.dom.img.style.opacity = '1';
         this.dom.img.style.zIndex = '2';
 
         this.dom.imgPrev.style.transition = 'none';
         this.dom.imgPrev.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        this.dom.imgPrev.style.filter = 'none';
         this.dom.imgPrev.style.opacity = '1';
         this.dom.imgPrev.style.zIndex = '1';
 
@@ -628,11 +673,12 @@ export class ViewerOverlay {
           this.dom.img.style.transition = `transform ${duration} ${easing}`;
           this.dom.imgPrev.style.transition = isSlide
             ? `transform ${duration} ${easing}`
-            : `transform ${duration} ${easing}, opacity ${duration} ${easing}`;
+            : `transform ${duration} ${easing}, opacity ${duration} ${easing}, filter ${duration} ${easing}`;
 
           this.dom.img.style.transform = 'translate3d(0, 0, 0)';
           this.dom.imgPrev.style.transform = outgoingEndTransform;
           this.dom.imgPrev.style.opacity = outgoingEndOpacity;
+          this.dom.imgPrev.style.filter = outgoingFilter;
         });
 
         // Cleanup previous image layer after transition finishes
@@ -641,14 +687,17 @@ export class ViewerOverlay {
             this.dom.imgPrev.style.display = 'none';
             this.dom.imgPrev.style.transform = 'none';
             this.dom.imgPrev.style.opacity = '0';
+            this.dom.imgPrev.style.filter = 'none';
+            this.dom.img.style.boxShadow = 'none';
             this.dom.img.style.transition = 'opacity 0.28s var(--immerse-smooth)';
             this._isTransitioning = false;
           }
-        }, 360);
+        }, isSlide ? 360 : 420);
       } else {
         // Initial load: fade in center
         this.dom.img.style.transition = 'opacity 0.28s var(--immerse-smooth)';
         this.dom.img.style.transform = 'translate3d(0, 0, 0)';
+        this.dom.img.style.boxShadow = 'none';
         requestAnimationFrame(() => {
           this.dom.img.style.opacity = '1';
         });
@@ -776,17 +825,59 @@ export class ViewerOverlay {
     this.resetZoomState();
     if (this.currentPostIndex < this.posts.length - 1) {
       this.goToPost(this.currentPostIndex + 1, 0);
-    } else if (this.onLoadMore) {
-      this._waitingForNextPost = true;
+    } else {
+      // Pending next post: record intent, show spinner, and auto-navigate once loaded
+      this._pendingNavigation = {
+        type: 'post',
+        direction: 1,
+        fromPostIndex: this.currentPostIndex
+      };
       this.dom.spinner.classList.add('immerse-spinner-visible');
-      this.onLoadMore();
+
+      if (this.onLoadMore) {
+        this.onLoadMore();
+
+        // Responsive retry poll: if Instagram hasn't hydrated new items yet, re-trigger
+        if (this._loadMoreRetryInterval) clearInterval(this._loadMoreRetryInterval);
+        let retries = 0;
+        this._loadMoreRetryInterval = setInterval(() => {
+          retries++;
+          if (this._pendingNavigation?.type === 'post') {
+            if (this.posts.length > this._pendingNavigation.fromPostIndex + 1) {
+              const target = this._pendingNavigation.fromPostIndex + 1;
+              this._pendingNavigation = null;
+              clearInterval(this._loadMoreRetryInterval);
+              this._loadMoreRetryInterval = null;
+              if (this._waitingTimeout) {
+                clearTimeout(this._waitingTimeout);
+                this._waitingTimeout = null;
+              }
+              this.dom.spinner.classList.remove('immerse-spinner-visible');
+              this.goToPost(target, 0);
+            } else if (retries < 6) {
+              this.onLoadMore();
+            } else {
+              clearInterval(this._loadMoreRetryInterval);
+              this._loadMoreRetryInterval = null;
+            }
+          } else {
+            clearInterval(this._loadMoreRetryInterval);
+            this._loadMoreRetryInterval = null;
+          }
+        }, 750);
+      }
+
       if (this._waitingTimeout) clearTimeout(this._waitingTimeout);
       this._waitingTimeout = setTimeout(() => {
-        if (this._waitingForNextPost) {
-          this._waitingForNextPost = false;
+        if (this._pendingNavigation?.type === 'post') {
+          this._pendingNavigation = null;
           this.dom.spinner.classList.remove('immerse-spinner-visible');
         }
-      }, 4000);
+        if (this._loadMoreRetryInterval) {
+          clearInterval(this._loadMoreRetryInterval);
+          this._loadMoreRetryInterval = null;
+        }
+      }, 7000);
     }
   }
 
@@ -794,6 +885,11 @@ export class ViewerOverlay {
     this._lastNavTime = Date.now();
     this._navDirection = -1;
     this.resetZoomState();
+    this._pendingNavigation = null;
+    if (this._loadMoreRetryInterval) {
+      clearInterval(this._loadMoreRetryInterval);
+      this._loadMoreRetryInterval = null;
+    }
     if (this.currentPostIndex > 0) {
       this.goToPost(this.currentPostIndex - 1, 0);
     }
@@ -823,17 +919,26 @@ export class ViewerOverlay {
       return;
     }
 
-    // At the end of currently collected slides: check if native carousel has more
-    const nativeNext = findNativeCarouselNextButton(post.tile);
-    if (nativeNext) {
-      this._advanceNativeCarouselAndGo(post, this.currentSlideIndex + 1);
-    }
+    // End of collected slides: request next slide from Instagram and auto-navigate once loaded
+    const targetSlide = this.currentSlideIndex + 1;
+    this._pendingNavigation = {
+      type: 'slide',
+      direction: 1,
+      targetSlideIndex: targetSlide
+    };
+    this.dom.spinner.classList.add('immerse-spinner-visible');
+    this._advanceNativeCarouselAndGo(post, targetSlide);
   }
 
   prevSlide() {
     this._lastNavTime = Date.now();
     this._navDirection = -1;
     this.resetZoomState();
+    this._pendingNavigation = null;
+    if (this._navPollInterval) {
+      clearInterval(this._navPollInterval);
+      this._navPollInterval = null;
+    }
     if (this.currentSlideIndex > 0) {
       this.goToSlide(this.currentSlideIndex - 1);
     }
@@ -856,24 +961,39 @@ export class ViewerOverlay {
 
   _advanceNativeCarouselAndGo(post, targetSlideIndex) {
     const nativeNext = findNativeCarouselNextButton(post.tile);
-    if (!nativeNext) return;
+    if (!nativeNext) {
+      if (this._pendingNavigation?.type === 'slide') {
+        this._pendingNavigation = null;
+        this.dom.spinner.classList.remove('immerse-spinner-visible');
+      }
+      return;
+    }
 
     nativeNext.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     nativeNext.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
+    if (this._navPollInterval) clearInterval(this._navPollInterval);
     let attempts = 0;
-    const pollInterval = setInterval(() => {
+    this._navPollInterval = setInterval(() => {
       attempts++;
       this._syncPostSlides(post);
 
       if (post.slides.length > targetSlideIndex) {
-        clearInterval(pollInterval);
+        clearInterval(this._navPollInterval);
+        this._navPollInterval = null;
+        this._pendingNavigation = null;
+        this.dom.spinner.classList.remove('immerse-spinner-visible');
         this.goToSlide(targetSlideIndex);
-      } else if (attempts >= 8) {
-        clearInterval(pollInterval);
+      } else if (attempts >= 45) { // 45 * 60ms = 2.7s window
+        clearInterval(this._navPollInterval);
+        this._navPollInterval = null;
+        if (this._pendingNavigation?.type === 'slide') {
+          this._pendingNavigation = null;
+          this.dom.spinner.classList.remove('immerse-spinner-visible');
+        }
         this._updateCarouselControls(post);
       }
-    }, 45);
+    }, 60);
   }
 
   _prefetchNextNativeSlide(post) {
@@ -902,11 +1022,13 @@ export class ViewerOverlay {
       this.dom.imgPrev.style.transition = 'none';
       this.dom.imgPrev.style.display = 'none';
       this.dom.imgPrev.style.transform = 'none';
+      this.dom.imgPrev.style.filter = 'none';
       this.dom.imgPrev.style.opacity = '0';
     }
     if (this.dom?.img) {
       this.dom.img.style.transition = 'none';
       this.dom.img.style.transform = 'translate3d(0, 0, 0)';
+      this.dom.img.style.boxShadow = 'none';
       this.dom.img.style.opacity = '1';
     }
     this._isTransitioning = false;

@@ -30,7 +30,7 @@ export class MediaDetector {
     this.observer = new MutationObserver((mutations) => {
       let shouldScan = false;
       for (const mutation of mutations) {
-        if (mutation.addedNodes.length > 0) {
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
           for (let i = 0; i < mutation.addedNodes.length; i++) {
             const node = mutation.addedNodes[i];
             if (node.nodeType === Node.ELEMENT_NODE) {
@@ -38,6 +38,9 @@ export class MediaDetector {
               shouldScan = true;
             }
           }
+        } else if (mutation.type === 'attributes' && mutation.target) {
+          this._pendingNodes.push(mutation.target);
+          shouldScan = true;
         }
       }
 
@@ -52,7 +55,9 @@ export class MediaDetector {
 
     this.observer.observe(document.body, {
       childList: true,
-      subtree: true
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src', 'srcset']
     });
   }
 
@@ -80,7 +85,22 @@ export class MediaDetector {
    * @param {HTMLElement} root
    */
   scan(root) {
-    if (!root || !root.querySelectorAll) return;
+    if (!root) return;
+
+    // Direct image node check (e.g. hydrated src/srcset attribute mutation)
+    if (root.tagName === 'IMG') {
+      const tile = findClosestPost(root);
+      if (tile && isLegitimatePhotoPost(tile) && isLegitimatePostImage(root)) {
+        if (!this.processedImages.has(root)) {
+          this.processedImages.add(root);
+          this.mediaEntries.push({ img: root, container: tile });
+          this.onMediaFound(root, tile);
+        }
+      }
+      return;
+    }
+
+    if (!root.querySelectorAll) return;
 
     // Strict semantic selector targeting only photo post links and feed post articles (skipping reels)
     const postTiles = Array.from(root.querySelectorAll('a[href*="/p/"], article'));

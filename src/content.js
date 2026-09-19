@@ -102,6 +102,11 @@ class ImmerseApp {
     const settings = settingsStore.get();
     if (!settings.enabled) return;
 
+    // Keep overlay settings in sync with current storage
+    if (this.overlay) {
+      this.overlay.updateSettings(settings);
+    }
+
     // Preserve the user's current scroll position so we can restore it on close
     this.savedScrollY = window.scrollY;
 
@@ -155,10 +160,15 @@ class ImmerseApp {
     if (this._isLoadingMore) return;
     this._isLoadingMore = true;
 
-    // Gently nudge scroll down by 1.2 viewports
-    const scrollStep = Math.round(window.innerHeight * 1.2);
+    // Gently nudge scroll down by 1.5 viewports
+    const scrollStep = Math.round(window.innerHeight * 1.5);
     window.scrollBy({ top: scrollStep, behavior: 'smooth' });
     window.dispatchEvent(new Event('scroll', { bubbles: true }));
+
+    const scrollEl = document.scrollingElement || document.documentElement || document.body;
+    if (scrollEl) {
+      scrollEl.dispatchEvent(new Event('scroll', { bubbles: true }));
+    }
 
     const mainEl = document.querySelector('main') || document.querySelector('div[role="main"]');
     if (mainEl && mainEl.scrollHeight > mainEl.clientHeight) {
@@ -166,10 +176,10 @@ class ImmerseApp {
       mainEl.dispatchEvent(new Event('scroll', { bubbles: true }));
     }
 
-    // Cooldown prevents excessive scroll spam
+    // Responsive cooldown prevents excessive scroll spam
     setTimeout(() => {
       this._isLoadingMore = false;
-    }, 1500);
+    }, 700);
   }
 }
 

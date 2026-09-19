@@ -41,6 +41,19 @@ export class HoverButtonManager {
 
       if (tile && !isLegitimatePhotoPost(tile)) return;
 
+      // In feed posts: only activate when cursor is hovering within the photo/media area,
+      // strictly ignoring post header (avatar/author/3-dot menu), comments, and action buttons
+      if (tile && tile.tagName === 'ARTICLE') {
+        const inHeaderOrMenu = target.closest('header, section, form, [role="menu"], [role="button"]');
+        if (inHeaderOrMenu && !target.closest('.immerse-hover-btn-container')) {
+          if (this.activeButton) {
+            this.activeButton.classList.remove('immerse-visible');
+            this.activeButton = null;
+          }
+          return;
+        }
+      }
+
       let btn = tile ? this.tileToButtonMap.get(tile) : null;
       if (!btn && target) {
         const media = findPostMediaContainer(target);
@@ -70,7 +83,10 @@ export class HoverButtonManager {
 
       if (tile && this.tileToButtonMap.has(tile)) {
         const related = e.relatedTarget;
-        if (!related || !tile.contains(related)) {
+        const isStillInTile = related && tile.contains(related);
+        const enteredHeaderInArticle = isStillInTile && tile.tagName === 'ARTICLE' && related.closest && related.closest('header, section, form, [role="menu"]');
+
+        if (!isStillInTile || enteredHeaderInArticle) {
           const btn = this.tileToButtonMap.get(tile);
           if (hideTimer) clearTimeout(hideTimer);
           hideTimer = setTimeout(() => {

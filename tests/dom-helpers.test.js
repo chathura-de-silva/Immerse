@@ -37,6 +37,28 @@ test('findPostMediaContainer resolves post link if present', () => {
   assert.equal(findPostMediaContainer(mockImg), mockLink);
 });
 
+test('findPostMediaContainer isolates media wrapper inside feed article without header', () => {
+  const mockArticle = { tagName: 'ARTICLE' };
+  const mockPostCard = {
+    tagName: 'DIV',
+    parentElement: mockArticle,
+    querySelector: (sel) => sel.includes('header') ? { tagName: 'HEADER' } : null
+  };
+  const mockMediaWrapper = {
+    tagName: 'DIV',
+    parentElement: mockPostCard,
+    querySelector: () => null
+  };
+  const mockImg = {
+    tagName: 'IMG',
+    parentElement: mockMediaWrapper,
+    closest: (sel) => sel.includes('article') ? mockArticle : null
+  };
+
+  const resolved = findPostMediaContainer(mockImg);
+  assert.equal(resolved, mockMediaWrapper);
+});
+
 test('isLegitimatePhotoPost strictly rejects reels, videos, and sponsored ads', () => {
   // 1. Reel post
   const mockReel = {

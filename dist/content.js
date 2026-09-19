@@ -203,18 +203,30 @@
     return imgs.filter(isLegitimatePostImage);
   }
   function findPostMediaContainer(element) {
-    if (!element) return document.body;
-    const postLink = element.closest('a[href*="/p/"]');
-    if (postLink) return postLink;
-    const article = element.closest("article");
+    if (!element) return typeof document !== "undefined" ? document.body : null;
+    const article = element.closest ? element.closest("article") : null;
     if (article) {
       let curr = element;
-      while (curr && curr.parentElement && curr.parentElement !== article && curr.parentElement !== document.body) {
-        curr = curr.parentElement;
+      let mediaBox = element.parentElement || element;
+      while (curr && curr.parentElement && curr.parentElement !== article && curr.parentElement !== (typeof document !== "undefined" ? document.body : null)) {
+        const parent = curr.parentElement;
+        const hasHeaderOrMenu = parent.querySelector ? parent.querySelector(
+          'header, svg[aria-label*="More" i], button[aria-label*="More" i], [aria-label*="Options" i]'
+        ) : null;
+        const hasActions = parent.querySelector ? parent.querySelector(
+          'section, svg[aria-label*="Like" i], svg[aria-label*="Comment" i], svg[aria-label*="Share" i]'
+        ) : null;
+        if (hasHeaderOrMenu || hasActions) {
+          break;
+        }
+        mediaBox = parent;
+        curr = parent;
       }
-      if (curr && curr.parentElement === article) {
-        return curr;
-      }
+      return mediaBox;
+    }
+    const postLink = element.closest ? element.closest('a[href*="/p/"]') : null;
+    if (postLink && (!postLink.querySelector || !postLink.querySelector('header, svg[aria-label*="More" i]'))) {
+      return postLink;
     }
     return element.parentElement || element;
   }
@@ -470,7 +482,10 @@
       this.posts = [];
       this.currentPostIndex = 0;
       this.currentSlideIndex = 0;
-      this._waitingForNextPost = false;
+      this._pendingNavigation = null;
+      this._navPollInterval = null;
+      this._loadMoreRetryInterval = null;
+      this._activeLoadingImg = null;
       this.scale = 1;
       this.panX = 0;
       this.panY = 0;
@@ -746,6 +761,20 @@
         clearTimeout(this._counterTextTimeout);
         this._counterTextTimeout = null;
       }
+      if (this._waitingTimeout) {
+        clearTimeout(this._waitingTimeout);
+        this._waitingTimeout = null;
+      }
+      if (this._navPollInterval) {
+        clearInterval(this._navPollInterval);
+        this._navPollInterval = null;
+      }
+      if (this._loadMoreRetryInterval) {
+        clearInterval(this._loadMoreRetryInterval);
+        this._loadMoreRetryInterval = null;
+      }
+      this._pendingNavigation = null;
+      this._activeLoadingImg = null;
       this.isOpen = false;
       this._completeTransitionImmediately();
       this.resetTransform();
@@ -773,7 +802,6 @@
      */
     updatePosts(newPosts) {
       if (!newPosts || newPosts.length === 0) return;
-      const oldLength = this.posts.length;
       const activePost = this.posts[this.currentPostIndex];
       if (activePost) {
         const newActiveIdx = newPosts.findIndex((p) => p.id === activePost.id || p.tile && p.tile === activePost.tile);
@@ -782,20 +810,27 @@
         }
       }
       this.posts = newPosts;
-      if (this._waitingForNextPost && this.posts.length > oldLength) {
-        this._waitingForNextPost = false;
-        if (this._waitingTimeout) {
-          clearTimeout(this._waitingTimeout);
-          this._waitingTimeout = null;
+      if (this._pendingNavigation && this._pendingNavigation.type === "post") {
+        const nextTargetIdx = this._pendingNavigation.fromPostIndex + 1;
+        if (this.posts.length > nextTargetIdx) {
+          this._pendingNavigation = null;
+          if (this._waitingTimeout) {
+            clearTimeout(this._waitingTimeout);
+            this._waitingTimeout = null;
+          }
+          if (this._loadMoreRetryInterval) {
+            clearInterval(this._loadMoreRetryInterval);
+            this._loadMoreRetryInterval = null;
+          }
+          this.dom.spinner.classList.remove("immerse-spinner-visible");
+          this.goToPost(nextTargetIdx, 0);
+          return;
         }
-        this.dom.spinner.classList.remove("immerse-spinner-visible");
-        this.goToPost(oldLength, 0);
-      } else {
-        this._updateHeaderCounter();
-        const curr = this.posts[this.currentPostIndex];
-        if (curr) {
-          this._updateCarouselControls(curr);
-        }
+      }
+      this._updateHeaderCounter();
+      const curr = this.posts[this.currentPostIndex];
+      if (curr) {
+        this._updateCarouselControls(curr);
       }
     }
     /**
@@ -917,7 +952,13 @@
           }
         }
       }, 80);
+      if (this._activeLoadingImg) {
+        this._activeLoadingImg.onload = null;
+        this._activeLoadingImg.onerror = null;
+        this._activeLoadingImg = null;
+      }
       const tempImg = new Image();
+      this._activeLoadingImg = tempImg;
       const onReady = async () => {
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
         if (this._spinnerTimeout) {
@@ -925,6 +966,7 @@
           this._spinnerTimeout = null;
         }
         this._isLoading = false;
+        this._activeLoadingImg = null;
         this.dom.spinner.classList.remove("immerse-spinner-visible");
         if (tempImg.decode) {
           await tempImg.decode().catch(() => {
@@ -939,50 +981,64 @@
           this._isTransitioning = true;
           const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
           const slideOffset = dir * viewWidth;
-          let incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
+          let incomingStartTransform = "";
           let outgoingEndTransform = "";
           let outgoingEndOpacity = "0";
+          let outgoingFilter = "none";
+          let incomingShadow = "none";
           let easing = "";
           let duration = "";
           if (isSlide) {
+            incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
             outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0)`;
             outgoingEndOpacity = "1";
+            outgoingFilter = "none";
+            incomingShadow = "none";
             easing = "cubic-bezier(0.2, 0, 0, 1)";
             duration = "0.34s";
           } else {
-            outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0) scale(0.92)`;
+            incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
+            outgoingEndTransform = `translate3d(${-dir * Math.round(viewWidth * 0.28)}px, 0, 0) scale(0.84)`;
             outgoingEndOpacity = "0";
+            outgoingFilter = "brightness(0.65)";
+            incomingShadow = dir > 0 ? "-24px 0 60px rgba(0, 0, 0, 0.75)" : "24px 0 60px rgba(0, 0, 0, 0.75)";
             easing = "cubic-bezier(0.16, 1, 0.3, 1)";
-            duration = "0.35s";
+            duration = "0.40s";
           }
           this.dom.img.style.transition = "none";
           this.dom.img.style.transform = incomingStartTransform;
+          this.dom.img.style.boxShadow = incomingShadow;
           this.dom.img.style.opacity = "1";
           this.dom.img.style.zIndex = "2";
           this.dom.imgPrev.style.transition = "none";
           this.dom.imgPrev.style.transform = "translate3d(0, 0, 0) scale(1)";
+          this.dom.imgPrev.style.filter = "none";
           this.dom.imgPrev.style.opacity = "1";
           this.dom.imgPrev.style.zIndex = "1";
           void this.dom.img.offsetWidth;
           requestAnimationFrame(() => {
             this.dom.img.style.transition = `transform ${duration} ${easing}`;
-            this.dom.imgPrev.style.transition = isSlide ? `transform ${duration} ${easing}` : `transform ${duration} ${easing}, opacity ${duration} ${easing}`;
+            this.dom.imgPrev.style.transition = isSlide ? `transform ${duration} ${easing}` : `transform ${duration} ${easing}, opacity ${duration} ${easing}, filter ${duration} ${easing}`;
             this.dom.img.style.transform = "translate3d(0, 0, 0)";
             this.dom.imgPrev.style.transform = outgoingEndTransform;
             this.dom.imgPrev.style.opacity = outgoingEndOpacity;
+            this.dom.imgPrev.style.filter = outgoingFilter;
           });
           this._transitionTimeout = setTimeout(() => {
             if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
               this.dom.imgPrev.style.display = "none";
               this.dom.imgPrev.style.transform = "none";
               this.dom.imgPrev.style.opacity = "0";
+              this.dom.imgPrev.style.filter = "none";
+              this.dom.img.style.boxShadow = "none";
               this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
               this._isTransitioning = false;
             }
-          }, 360);
+          }, isSlide ? 360 : 420);
         } else {
           this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
           this.dom.img.style.transform = "translate3d(0, 0, 0)";
+          this.dom.img.style.boxShadow = "none";
           requestAnimationFrame(() => {
             this.dom.img.style.opacity = "1";
           });
@@ -1085,23 +1141,65 @@
       this.resetZoomState();
       if (this.currentPostIndex < this.posts.length - 1) {
         this.goToPost(this.currentPostIndex + 1, 0);
-      } else if (this.onLoadMore) {
-        this._waitingForNextPost = true;
+      } else {
+        this._pendingNavigation = {
+          type: "post",
+          direction: 1,
+          fromPostIndex: this.currentPostIndex
+        };
         this.dom.spinner.classList.add("immerse-spinner-visible");
-        this.onLoadMore();
+        if (this.onLoadMore) {
+          this.onLoadMore();
+          if (this._loadMoreRetryInterval) clearInterval(this._loadMoreRetryInterval);
+          let retries = 0;
+          this._loadMoreRetryInterval = setInterval(() => {
+            retries++;
+            if (this._pendingNavigation?.type === "post") {
+              if (this.posts.length > this._pendingNavigation.fromPostIndex + 1) {
+                const target = this._pendingNavigation.fromPostIndex + 1;
+                this._pendingNavigation = null;
+                clearInterval(this._loadMoreRetryInterval);
+                this._loadMoreRetryInterval = null;
+                if (this._waitingTimeout) {
+                  clearTimeout(this._waitingTimeout);
+                  this._waitingTimeout = null;
+                }
+                this.dom.spinner.classList.remove("immerse-spinner-visible");
+                this.goToPost(target, 0);
+              } else if (retries < 6) {
+                this.onLoadMore();
+              } else {
+                clearInterval(this._loadMoreRetryInterval);
+                this._loadMoreRetryInterval = null;
+              }
+            } else {
+              clearInterval(this._loadMoreRetryInterval);
+              this._loadMoreRetryInterval = null;
+            }
+          }, 750);
+        }
         if (this._waitingTimeout) clearTimeout(this._waitingTimeout);
         this._waitingTimeout = setTimeout(() => {
-          if (this._waitingForNextPost) {
-            this._waitingForNextPost = false;
+          if (this._pendingNavigation?.type === "post") {
+            this._pendingNavigation = null;
             this.dom.spinner.classList.remove("immerse-spinner-visible");
           }
-        }, 4e3);
+          if (this._loadMoreRetryInterval) {
+            clearInterval(this._loadMoreRetryInterval);
+            this._loadMoreRetryInterval = null;
+          }
+        }, 7e3);
       }
     }
     prevPost() {
       this._lastNavTime = Date.now();
       this._navDirection = -1;
       this.resetZoomState();
+      this._pendingNavigation = null;
+      if (this._loadMoreRetryInterval) {
+        clearInterval(this._loadMoreRetryInterval);
+        this._loadMoreRetryInterval = null;
+      }
       if (this.currentPostIndex > 0) {
         this.goToPost(this.currentPostIndex - 1, 0);
       }
@@ -1126,15 +1224,24 @@
         this._prefetchNextNativeSlide(post);
         return;
       }
-      const nativeNext = findNativeCarouselNextButton(post.tile);
-      if (nativeNext) {
-        this._advanceNativeCarouselAndGo(post, this.currentSlideIndex + 1);
-      }
+      const targetSlide = this.currentSlideIndex + 1;
+      this._pendingNavigation = {
+        type: "slide",
+        direction: 1,
+        targetSlideIndex: targetSlide
+      };
+      this.dom.spinner.classList.add("immerse-spinner-visible");
+      this._advanceNativeCarouselAndGo(post, targetSlide);
     }
     prevSlide() {
       this._lastNavTime = Date.now();
       this._navDirection = -1;
       this.resetZoomState();
+      this._pendingNavigation = null;
+      if (this._navPollInterval) {
+        clearInterval(this._navPollInterval);
+        this._navPollInterval = null;
+      }
       if (this.currentSlideIndex > 0) {
         this.goToSlide(this.currentSlideIndex - 1);
       }
@@ -1154,21 +1261,36 @@
     }
     _advanceNativeCarouselAndGo(post, targetSlideIndex) {
       const nativeNext = findNativeCarouselNextButton(post.tile);
-      if (!nativeNext) return;
+      if (!nativeNext) {
+        if (this._pendingNavigation?.type === "slide") {
+          this._pendingNavigation = null;
+          this.dom.spinner.classList.remove("immerse-spinner-visible");
+        }
+        return;
+      }
       nativeNext.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
       nativeNext.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      if (this._navPollInterval) clearInterval(this._navPollInterval);
       let attempts = 0;
-      const pollInterval = setInterval(() => {
+      this._navPollInterval = setInterval(() => {
         attempts++;
         this._syncPostSlides(post);
         if (post.slides.length > targetSlideIndex) {
-          clearInterval(pollInterval);
+          clearInterval(this._navPollInterval);
+          this._navPollInterval = null;
+          this._pendingNavigation = null;
+          this.dom.spinner.classList.remove("immerse-spinner-visible");
           this.goToSlide(targetSlideIndex);
-        } else if (attempts >= 8) {
-          clearInterval(pollInterval);
+        } else if (attempts >= 45) {
+          clearInterval(this._navPollInterval);
+          this._navPollInterval = null;
+          if (this._pendingNavigation?.type === "slide") {
+            this._pendingNavigation = null;
+            this.dom.spinner.classList.remove("immerse-spinner-visible");
+          }
           this._updateCarouselControls(post);
         }
-      }, 45);
+      }, 60);
     }
     _prefetchNextNativeSlide(post) {
       const nativeNext = findNativeCarouselNextButton(post.tile);
@@ -1194,11 +1316,13 @@
         this.dom.imgPrev.style.transition = "none";
         this.dom.imgPrev.style.display = "none";
         this.dom.imgPrev.style.transform = "none";
+        this.dom.imgPrev.style.filter = "none";
         this.dom.imgPrev.style.opacity = "0";
       }
       if (this.dom?.img) {
         this.dom.img.style.transition = "none";
         this.dom.img.style.transform = "translate3d(0, 0, 0)";
+        this.dom.img.style.boxShadow = "none";
         this.dom.img.style.opacity = "1";
       }
       this._isTransitioning = false;
@@ -1481,6 +1605,16 @@
         if (!target) return;
         const tile = target.closest('a[href*="/p/"]') || target.closest("article");
         if (tile && !isLegitimatePhotoPost(tile)) return;
+        if (tile && tile.tagName === "ARTICLE") {
+          const inHeaderOrMenu = target.closest('header, section, form, [role="menu"], [role="button"]');
+          if (inHeaderOrMenu && !target.closest(".immerse-hover-btn-container")) {
+            if (this.activeButton) {
+              this.activeButton.classList.remove("immerse-visible");
+              this.activeButton = null;
+            }
+            return;
+          }
+        }
         let btn = tile ? this.tileToButtonMap.get(tile) : null;
         if (!btn && target) {
           const media = findPostMediaContainer(target);
@@ -1504,7 +1638,9 @@
         const tile = target.closest('a[href*="/p/"]') || target.closest("article");
         if (tile && this.tileToButtonMap.has(tile)) {
           const related = e.relatedTarget;
-          if (!related || !tile.contains(related)) {
+          const isStillInTile = related && tile.contains(related);
+          const enteredHeaderInArticle = isStillInTile && tile.tagName === "ARTICLE" && related.closest && related.closest('header, section, form, [role="menu"]');
+          if (!isStillInTile || enteredHeaderInArticle) {
             const btn = this.tileToButtonMap.get(tile);
             if (hideTimer) clearTimeout(hideTimer);
             hideTimer = setTimeout(() => {
@@ -1604,7 +1740,7 @@
       this.observer = new MutationObserver((mutations) => {
         let shouldScan = false;
         for (const mutation of mutations) {
-          if (mutation.addedNodes.length > 0) {
+          if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
             for (let i = 0; i < mutation.addedNodes.length; i++) {
               const node = mutation.addedNodes[i];
               if (node.nodeType === Node.ELEMENT_NODE) {
@@ -1612,6 +1748,9 @@
                 shouldScan = true;
               }
             }
+          } else if (mutation.type === "attributes" && mutation.target) {
+            this._pendingNodes.push(mutation.target);
+            shouldScan = true;
           }
         }
         if (shouldScan && !this._rafScheduled) {
@@ -1624,7 +1763,9 @@
       });
       this.observer.observe(document.body, {
         childList: true,
-        subtree: true
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["src", "srcset"]
       });
     }
     /**
@@ -1649,7 +1790,19 @@
      * @param {HTMLElement} root
      */
     scan(root) {
-      if (!root || !root.querySelectorAll) return;
+      if (!root) return;
+      if (root.tagName === "IMG") {
+        const tile = findClosestPost(root);
+        if (tile && isLegitimatePhotoPost(tile) && isLegitimatePostImage(root)) {
+          if (!this.processedImages.has(root)) {
+            this.processedImages.add(root);
+            this.mediaEntries.push({ img: root, container: tile });
+            this.onMediaFound(root, tile);
+          }
+        }
+        return;
+      }
+      if (!root.querySelectorAll) return;
       const postTiles = Array.from(root.querySelectorAll('a[href*="/p/"], article'));
       if (root.matches && (root.matches('a[href*="/p/"]') || root.tagName === "ARTICLE")) {
         postTiles.push(root);
@@ -1945,6 +2098,9 @@
     handleTrigger(targetImg, container) {
       const settings = settingsStore.get();
       if (!settings.enabled) return;
+      if (this.overlay) {
+        this.overlay.updateSettings(settings);
+      }
       this.savedScrollY = window.scrollY;
       const posts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
       if (posts.length > 0) {
@@ -1986,9 +2142,13 @@
     handleLoadMore() {
       if (this._isLoadingMore) return;
       this._isLoadingMore = true;
-      const scrollStep = Math.round(window.innerHeight * 1.2);
+      const scrollStep = Math.round(window.innerHeight * 1.5);
       window.scrollBy({ top: scrollStep, behavior: "smooth" });
       window.dispatchEvent(new Event("scroll", { bubbles: true }));
+      const scrollEl = document.scrollingElement || document.documentElement || document.body;
+      if (scrollEl) {
+        scrollEl.dispatchEvent(new Event("scroll", { bubbles: true }));
+      }
       const mainEl = document.querySelector("main") || document.querySelector('div[role="main"]');
       if (mainEl && mainEl.scrollHeight > mainEl.clientHeight) {
         mainEl.scrollBy({ top: scrollStep, behavior: "smooth" });
@@ -1996,7 +2156,7 @@
       }
       setTimeout(() => {
         this._isLoadingMore = false;
-      }, 1500);
+      }, 700);
     }
   };
   var app = new ImmerseApp();

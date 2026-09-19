@@ -233,22 +233,36 @@ export function findPostImages(postContainer) {
  * @returns {HTMLElement}
  */
 export function findPostMediaContainer(element) {
-  if (!element) return document.body;
+  if (!element) return (typeof document !== 'undefined' ? document.body : null);
 
-  // If inside a post link (profile grid or feed permalink tile), that link bounds the media
-  const postLink = element.closest('a[href*="/p/"]');
-  if (postLink) return postLink;
-
-  // If inside an article (feed post): locate the direct child of <article> that contains the media
-  const article = element.closest('article');
+  // If inside an article (feed post): strictly resolve the media/image container INSIDE the article,
+  // NEVER an outer container that encompasses the post header or the three-dot menu.
+  const article = element.closest ? element.closest('article') : null;
   if (article) {
     let curr = element;
-    while (curr && curr.parentElement && curr.parentElement !== article && curr.parentElement !== document.body) {
-      curr = curr.parentElement;
+    let mediaBox = element.parentElement || element;
+
+    while (curr && curr.parentElement && curr.parentElement !== article && curr.parentElement !== (typeof document !== 'undefined' ? document.body : null)) {
+      const parent = curr.parentElement;
+      const hasHeaderOrMenu = parent.querySelector ? parent.querySelector(
+        'header, svg[aria-label*="More" i], button[aria-label*="More" i], [aria-label*="Options" i]'
+      ) : null;
+      const hasActions = parent.querySelector ? parent.querySelector(
+        'section, svg[aria-label*="Like" i], svg[aria-label*="Comment" i], svg[aria-label*="Share" i]'
+      ) : null;
+      if (hasHeaderOrMenu || hasActions) {
+        break;
+      }
+      mediaBox = parent;
+      curr = parent;
     }
-    if (curr && curr.parentElement === article) {
-      return curr;
-    }
+    return mediaBox;
+  }
+
+  // If inside a post link (profile grid or permalink tile without header)
+  const postLink = element.closest ? element.closest('a[href*="/p/"]') : null;
+  if (postLink && (!postLink.querySelector || !postLink.querySelector('header, svg[aria-label*="More" i]'))) {
+    return postLink;
   }
 
   // Fallback to parent element
