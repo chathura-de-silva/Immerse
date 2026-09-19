@@ -6,6 +6,8 @@
     // 'both' | 'button-only' | 'image-click'
     showResolutionBadge: true,
     wheelZoom: true,
+    transitionStyle: "parallax",
+    // 'parallax' | 'slide'
     autoMaxRes: true
   });
   var SettingsStore = class {
@@ -186,6 +188,7 @@
       this._badgeTextTimeout = null;
       this._counterTextTimeout = null;
       this._lastNavTime = 0;
+      this._navDirection = 1;
       this.dom = null;
       this._handleKeyDown = this._handleKeyDown.bind(this);
       this._handleWheel = this._handleWheel.bind(this);
@@ -219,7 +222,11 @@
         className: "immerse-badge-text",
         textContent: "Ultra-HD"
       });
-      const badge = createElement("div", { className: "immerse-badge" });
+      const showBadge = this.options.showResolutionBadge !== false;
+      const badge = createElement("div", {
+        className: "immerse-badge",
+        style: { display: showBadge ? "inline-flex" : "none" }
+      });
       badge.append(badgeDot, badgeText);
       const counterText = createElement("span", {
         className: "immerse-counter-text",
@@ -468,6 +475,18 @@
       }
     }
     /**
+     * Updates overlay options dynamically when settings change.
+     *
+     * @param {Object} newSettings
+     */
+    updateSettings(newSettings = {}) {
+      this.options = { ...this.options, ...newSettings };
+      if (this.dom?.badge) {
+        const showBadge = this.options.showResolutionBadge !== false;
+        this.dom.badge.style.display = showBadge ? "inline-flex" : "none";
+      }
+    }
+    /**
      * Smoothly updates resolution badge text with a liquid glide transition.
      *
      * @param {string} text
@@ -544,21 +563,67 @@
         }
         if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
         this.dom.img.src = slide.url;
-        requestAnimationFrame(() => {
-          this.dom.img.style.opacity = "1";
-          this.dom.imgPrev.style.opacity = "0";
-          this.dom.spinner.classList.remove("immerse-spinner-visible");
-          this.dom.badgeDot.classList.remove("immerse-badge-dot-loading");
-          const w = tempImg.naturalWidth;
-          const h = tempImg.naturalHeight;
-          this._updateBadgeText(`${w} \xD7 ${h} \u2022 Highest Quality`);
-          setTimeout(() => {
-            if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
-              this.dom.imgPrev.style.display = "none";
-            }
-          }, 320);
-          this._preloadAdjacent();
-        });
+        const hasPrev = !!(this.dom.imgPrev.src && this.dom.imgPrev.style.display !== "none");
+        const dir = this._navDirection || 1;
+        const isSlide = this.options.transitionStyle === "slide";
+        if (hasPrev) {
+          let incomingStartTransform = "";
+          let outgoingEndTransform = "";
+          let incomingStartOpacity = "0";
+          let outgoingEndOpacity = "0";
+          let easing = "cubic-bezier(0.16, 1, 0.3, 1)";
+          let duration = "0.32s";
+          if (isSlide) {
+            incomingStartTransform = `translate3d(${dir * 100}%, 0, 0)`;
+            outgoingEndTransform = `translate3d(${-dir * 100}%, 0, 0)`;
+            incomingStartOpacity = "1";
+            outgoingEndOpacity = "0";
+            easing = "cubic-bezier(0.2, 0, 0, 1)";
+            duration = "0.34s";
+          } else {
+            incomingStartTransform = `translate3d(${dir * 80}px, 0, 0) scale(1.02)`;
+            outgoingEndTransform = `translate3d(${-dir * 80}px, 0, 0) scale(0.97)`;
+            incomingStartOpacity = "0";
+            outgoingEndOpacity = "0";
+            easing = "cubic-bezier(0.16, 1, 0.3, 1)";
+            duration = "0.32s";
+          }
+          this.dom.img.style.transition = "none";
+          this.dom.img.style.transform = incomingStartTransform;
+          this.dom.img.style.opacity = incomingStartOpacity;
+          this.dom.imgPrev.style.transition = "none";
+          this.dom.imgPrev.style.transform = "translate3d(0, 0, 0) scale(1)";
+          this.dom.imgPrev.style.opacity = "1";
+          void this.dom.img.offsetWidth;
+          requestAnimationFrame(() => {
+            this.dom.img.style.transition = `transform ${duration} ${easing}, opacity ${duration} ${easing}`;
+            this.dom.imgPrev.style.transition = `transform ${duration} ${easing}, opacity ${duration} ${easing}`;
+            this.dom.img.style.transform = "translate3d(0, 0, 0) scale(1)";
+            this.dom.img.style.opacity = "1";
+            this.dom.imgPrev.style.transform = outgoingEndTransform;
+            this.dom.imgPrev.style.opacity = outgoingEndOpacity;
+          });
+        } else {
+          this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
+          this.dom.img.style.transform = "translate3d(0, 0, 0) scale(1)";
+          requestAnimationFrame(() => {
+            this.dom.img.style.opacity = "1";
+          });
+        }
+        this.dom.spinner.classList.remove("immerse-spinner-visible");
+        this.dom.badgeDot.classList.remove("immerse-badge-dot-loading");
+        const w = tempImg.naturalWidth;
+        const h = tempImg.naturalHeight;
+        this._updateBadgeText(`${w} \xD7 ${h} \u2022 Highest Quality`);
+        setTimeout(() => {
+          if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+            this.dom.imgPrev.style.display = "none";
+            this.dom.imgPrev.style.transform = "none";
+            this.dom.imgPrev.style.opacity = "0";
+            this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
+          }
+        }, 360);
+        this._preloadAdjacent();
       };
       tempImg.onload = onReady;
       tempImg.onerror = () => {
@@ -606,20 +671,38 @@
       }
     }
     _preloadAdjacent() {
-      const post = this.posts[this.currentPostIndex];
-      if (post && post.slides[this.currentSlideIndex + 1]) {
-        const pre = new Image();
-        pre.src = post.slides[this.currentSlideIndex + 1].url;
+      if (!this.posts || this.posts.length === 0) return;
+      const targetIndices = [
+        this.currentPostIndex - 2,
+        this.currentPostIndex - 1,
+        this.currentPostIndex + 1,
+        this.currentPostIndex + 2
+      ];
+      for (const idx of targetIndices) {
+        if (idx >= 0 && idx < this.posts.length) {
+          const p = this.posts[idx];
+          if (p?.slides?.[0]?.url) {
+            const pre = new Image();
+            pre.src = p.slides[0].url;
+          }
+        }
       }
-      const nextPost = this.posts[this.currentPostIndex + 1];
-      if (nextPost && nextPost.slides[0]) {
-        const pre = new Image();
-        pre.src = nextPost.slides[0].url;
+      const post = this.posts[this.currentPostIndex];
+      if (post && post.slides) {
+        if (post.slides[this.currentSlideIndex - 1]?.url) {
+          const pre = new Image();
+          pre.src = post.slides[this.currentSlideIndex - 1].url;
+        }
+        if (post.slides[this.currentSlideIndex + 1]?.url) {
+          const pre = new Image();
+          pre.src = post.slides[this.currentSlideIndex + 1].url;
+        }
       }
     }
     /* ---------------- Primary Navigation: Grid Posts ---------------- */
     nextPost() {
       this._lastNavTime = Date.now();
+      this._navDirection = 1;
       this.resetTransform();
       if (this.currentPostIndex < this.posts.length - 1) {
         this.goToPost(this.currentPostIndex + 1, 0);
@@ -631,6 +714,7 @@
     }
     prevPost() {
       this._lastNavTime = Date.now();
+      this._navDirection = -1;
       this.resetTransform();
       if (this.currentPostIndex > 0) {
         this.goToPost(this.currentPostIndex - 1, 0);
@@ -638,6 +722,7 @@
     }
     goToPost(postIndex, slideIndex = 0) {
       this._lastNavTime = Date.now();
+      this._navDirection = postIndex >= this.currentPostIndex ? 1 : -1;
       this.resetTransform();
       this.currentPostIndex = postIndex;
       this.currentSlideIndex = slideIndex;
@@ -646,6 +731,7 @@
     /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
     nextSlide() {
       this._lastNavTime = Date.now();
+      this._navDirection = 1;
       this.resetTransform();
       const post = this.posts[this.currentPostIndex];
       if (post && this.currentSlideIndex < post.slides.length - 1) {
@@ -654,6 +740,7 @@
     }
     prevSlide() {
       this._lastNavTime = Date.now();
+      this._navDirection = -1;
       this.resetTransform();
       if (this.currentSlideIndex > 0) {
         this.goToSlide(this.currentSlideIndex - 1);
@@ -661,6 +748,7 @@
     }
     goToSlide(slideIndex) {
       this._lastNavTime = Date.now();
+      this._navDirection = slideIndex >= this.currentSlideIndex ? 1 : -1;
       this.resetTransform();
       this.currentSlideIndex = slideIndex;
       this.loadCurrent();
@@ -694,6 +782,7 @@
       if (!this.isOpen) return;
       e.preventDefault();
       e.stopPropagation();
+      if (this.options.wheelZoom === false) return;
       const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
       const newScale = Math.max(this.minScale, Math.min(this.maxScale, this.scale * zoomFactor));
       if (newScale === this.scale) return;
@@ -907,8 +996,8 @@
     _initDelegatedHover() {
       let hideTimer = null;
       document.addEventListener("pointerover", (e) => {
-        const settings = this.getSettings ? this.getSettings() : { enabled: true };
-        if (!settings.enabled) return;
+        const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: "both" };
+        if (!settings.enabled || settings.triggerMode === "image-click") return;
         const target = e.target;
         if (!target) return;
         const tile = target.closest('a[href*="/p/"]') || target.closest("article");
@@ -975,6 +1064,8 @@
       `
       });
       btn.addEventListener("click", (e) => {
+        const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: "both" };
+        if (!settings.enabled || settings.triggerMode === "image-click") return;
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -992,6 +1083,15 @@
         }
       }, true);
       tile.appendChild(btnContainer);
+    }
+    /**
+     * Hides all active hover buttons immediately.
+     */
+    hideAll() {
+      if (this.activeButton) {
+        this.activeButton.classList.remove("immerse-visible");
+        this.activeButton = null;
+      }
     }
   };
 
@@ -1430,7 +1530,10 @@
               totalPosts: this.sequencer?.length || 0
             });
           } else if (message.type === "SETTINGS_CHANGED") {
-            this.handleSettingsChange(message.settings);
+            for (const [k, v] of Object.entries(message.settings || {})) {
+              settingsStore.set(k, v);
+            }
+            this.handleSettingsChange(settingsStore.get());
             sendResponse({ success: true });
           }
           return true;
@@ -1461,13 +1564,19 @@
       }
     }
     handleSettingsChange(newSettings) {
-      if (newSettings.enabled) {
+      const current = settingsStore.get();
+      const merged = { ...current, ...newSettings };
+      if (merged.enabled) {
         this.mediaDetector.start();
       } else {
         this.mediaDetector.stop();
         if (this.overlay?.isOpen) {
           this.overlay.close();
         }
+        this.hoverButtons.hideAll();
+      }
+      if (this.overlay) {
+        this.overlay.updateSettings(merged);
       }
     }
     /**

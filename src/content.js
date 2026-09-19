@@ -72,7 +72,10 @@ class ImmerseApp {
             totalPosts: this.sequencer?.length || 0
           });
         } else if (message.type === 'SETTINGS_CHANGED') {
-          this.handleSettingsChange(message.settings);
+          for (const [k, v] of Object.entries(message.settings || {})) {
+            settingsStore.set(k, v);
+          }
+          this.handleSettingsChange(settingsStore.get());
           sendResponse({ success: true });
         }
         return true;
@@ -112,13 +115,22 @@ class ImmerseApp {
   }
 
   handleSettingsChange(newSettings) {
-    if (newSettings.enabled) {
+    const current = settingsStore.get();
+    const merged = { ...current, ...newSettings };
+
+    if (merged.enabled) {
       this.mediaDetector.start();
     } else {
       this.mediaDetector.stop();
       if (this.overlay?.isOpen) {
         this.overlay.close();
       }
+      this.hoverButtons.hideAll();
+    }
+
+    // Forward updated settings directly to overlay
+    if (this.overlay) {
+      this.overlay.updateSettings(merged);
     }
   }
 

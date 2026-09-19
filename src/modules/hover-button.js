@@ -29,8 +29,8 @@ export class HoverButtonManager {
     let hideTimer = null;
 
     document.addEventListener('pointerover', (e) => {
-      const settings = this.getSettings ? this.getSettings() : { enabled: true };
-      if (!settings.enabled) return;
+      const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: 'both' };
+      if (!settings.enabled || settings.triggerMode === 'image-click') return;
 
       const target = e.target;
       if (!target) return;
@@ -120,6 +120,9 @@ export class HoverButtonManager {
 
     // Handle button activation
     btn.addEventListener('click', (e) => {
+      const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: 'both' };
+      if (!settings.enabled || settings.triggerMode === 'image-click') return;
+
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
@@ -142,5 +145,15 @@ export class HoverButtonManager {
     }, true);
 
     tile.appendChild(btnContainer);
+  }
+
+  /**
+   * Hides all active hover buttons immediately.
+   */
+  hideAll() {
+    if (this.activeButton) {
+      this.activeButton.classList.remove('immerse-visible');
+      this.activeButton = null;
+    }
   }
 }
