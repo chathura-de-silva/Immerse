@@ -81,8 +81,8 @@ export class MediaDetector {
   scan(root) {
     if (!root || !root.querySelectorAll) return;
 
-    // Selector covering feed items, profile grid, explore grid, and post dialogs
-    const selector = 'article img, div._aagv img, a[href^="/p/"] img, a[href^="/reel/"] img, div[role="dialog"] img';
+    // Semantic selector covering feed articles, profile grid links, explore tiles, dialogs, and main feeds
+    const selector = 'article img, a[href*="/p/"] img, a[href*="/reel/"] img, div[role="dialog"] img, main img[srcset], div[role="presentation"] img';
     const images = Array.from(root.querySelectorAll(selector));
 
     if (root.tagName === 'IMG' && root.matches(selector)) {
@@ -102,10 +102,10 @@ export class MediaDetector {
       this.processedImages.add(img);
 
       // Find the visual wrapper / tile anchor
-      const container = img.closest('a[href^="/p/"]') ||
-                        img.closest('a[href^="/reel/"]') ||
-                        img.closest('div._aagv') ||
+      const container = img.closest('a[href*="/p/"]') ||
+                        img.closest('a[href*="/reel/"]') ||
                         img.closest('article') ||
+                        img.closest('div[role="dialog"]') ||
                         img.parentElement;
 
       if (container) {

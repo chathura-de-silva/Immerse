@@ -1,7 +1,7 @@
 /**
  * hover-button.js
- * Injects sleek, disappearing liquid-glass HD buttons over Instagram image posts
- * and activates whenever the mouse hovers anywhere on the tile.
+ * Injects modern transparent frosted glass HD buttons over Instagram image posts
+ * and activates whenever the cursor hovers ANYWHERE on the image tile in the grid or feed.
  */
 
 import { createElement } from '../utils/dom-helpers.js';
@@ -15,11 +15,71 @@ export class HoverButtonManager {
   constructor({ onTrigger, getSettings }) {
     this.onTrigger = onTrigger;
     this.getSettings = getSettings;
-    this.attachedTiles = new WeakSet();
+    this.tileToButtonMap = new Map();
+    this.activeButton = null;
+
+    this._initDelegatedHover();
   }
 
   /**
-   * Attaches a hover trigger to an image or its parent tile in the grid or feed.
+   * Centralized delegated hover detection ensuring the button appears
+   * whenever the user hovers ANYWHERE within the image tile (grid item or feed card).
+   */
+  _initDelegatedHover() {
+    let hideTimer = null;
+
+    document.addEventListener('pointerover', (e) => {
+      const settings = this.getSettings ? this.getSettings() : { enabled: true };
+      if (!settings.enabled) return;
+
+      const target = e.target;
+      if (!target) return;
+
+      // Find if cursor is anywhere inside an Instagram post tile
+      const tile = target.closest('a[href*="/p/"]') ||
+                   target.closest('a[href*="/reel/"]') ||
+                   target.closest('article') ||
+                   target.closest('div[role="dialog"]');
+
+      if (tile && this.tileToButtonMap.has(tile)) {
+        if (hideTimer) {
+          clearTimeout(hideTimer);
+          hideTimer = null;
+        }
+
+        const btn = this.tileToButtonMap.get(tile);
+        if (this.activeButton && this.activeButton !== btn) {
+          this.activeButton.classList.remove('immerse-visible');
+        }
+        this.activeButton = btn;
+        btn.classList.add('immerse-visible');
+      }
+    }, { passive: true });
+
+    document.addEventListener('pointerout', (e) => {
+      const target = e.target;
+      if (!target) return;
+
+      const tile = target.closest('a[href*="/p/"]') ||
+                   target.closest('a[href*="/reel/"]') ||
+                   target.closest('article');
+
+      if (tile && this.tileToButtonMap.has(tile)) {
+        const related = e.relatedTarget;
+        if (!related || !tile.contains(related)) {
+          const btn = this.tileToButtonMap.get(tile);
+          if (hideTimer) clearTimeout(hideTimer);
+          hideTimer = setTimeout(() => {
+            btn.classList.remove('immerse-visible');
+            if (this.activeButton === btn) this.activeButton = null;
+          }, 120);
+        }
+      }
+    }, { passive: true });
+  }
+
+  /**
+   * Attaches the hover trigger to a media tile.
    *
    * @param {HTMLImageElement} imgElement
    * @param {HTMLElement} container
@@ -27,16 +87,14 @@ export class HoverButtonManager {
   attach(imgElement, container) {
     if (!imgElement) return;
 
-    // Resolve the outermost interactive tile (e.g. grid <a> link or article)
-    const tile = imgElement.closest('a[href^="/p/"]') ||
-                 imgElement.closest('a[href^="/reel/"]') ||
-                 imgElement.closest('div._aabd') ||
+    // Resolve the outermost interactive tile
+    const tile = imgElement.closest('a[href*="/p/"]') ||
+                 imgElement.closest('a[href*="/reel/"]') ||
                  imgElement.closest('article') ||
                  container ||
                  imgElement.parentElement;
 
-    if (!tile || this.attachedTiles.has(tile)) return;
-    this.attachedTiles.add(tile);
+    if (!tile || this.tileToButtonMap.has(tile)) return;
 
     // Ensure tile has relative positioning context for placement
     const tileStyle = window.getComputedStyle(tile);
@@ -44,7 +102,7 @@ export class HoverButtonManager {
       tile.style.position = 'relative';
     }
 
-    // Build liquid-glass button container
+    // Build modern frosted glass button container
     const btnContainer = createElement('div', {
       className: 'immerse-hover-btn-container'
     });
@@ -53,8 +111,8 @@ export class HoverButtonManager {
       className: 'immerse-hover-btn',
       attributes: {
         type: 'button',
-        title: 'View in Ultra-HD Fullscreen (Immerse)',
-        'aria-label': 'View in Ultra-HD Fullscreen'
+        title: 'Open in Fullscreen Ultra-HD (Immerse)',
+        'aria-label': 'Open in Fullscreen Ultra-HD'
       },
       innerHTML: `
         <svg viewBox="0 0 24 24" fill="none">
@@ -64,7 +122,7 @@ export class HoverButtonManager {
       `
     });
 
-    // Trigger action on button click
+    // Handle button activation
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -73,32 +131,9 @@ export class HoverButtonManager {
     });
 
     btnContainer.appendChild(btn);
+    this.tileToButtonMap.set(tile, btn);
 
-    // Tile-wide hover detection: triggers anywhere on the tile
-    let hideTimer = null;
-    const showBtn = () => {
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = null;
-      }
-      const settings = this.getSettings ? this.getSettings() : { enabled: true };
-      if (settings.enabled !== false) {
-        btn.classList.add('immerse-visible');
-      }
-    };
-
-    const hideBtn = () => {
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => {
-        btn.classList.remove('immerse-visible');
-      }, 120);
-    };
-
-    tile.addEventListener('mouseenter', showBtn, { passive: true });
-    tile.addEventListener('mousemove', showBtn, { passive: true });
-    tile.addEventListener('mouseleave', hideBtn, { passive: true });
-
-    // Optional direct image / tile click trigger if enabled in settings
+    // Also support direct image click if preferred in settings
     imgElement.addEventListener('click', (e) => {
       const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: 'both' };
       if (!settings.enabled) return;

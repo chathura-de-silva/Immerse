@@ -28,8 +28,11 @@ class ImmerseApp {
     // Instantiate Gallery Sequencer for desktop folder-like navigation
     this.sequencer = new GallerySequencer();
 
-    // Instantiate Lightbox Overlay
-    this.overlay = new ViewerOverlay(settings);
+    // Instantiate Lightbox Overlay with infinite feed loading hook
+    this.overlay = new ViewerOverlay({
+      ...settings,
+      onLoadMore: () => this.handleLoadMore()
+    });
 
     // Instantiate Hover Button Manager
     this.hoverButtons = new HoverButtonManager({
@@ -117,6 +120,14 @@ class ImmerseApp {
         this.overlay.close();
       }
     }
+  }
+
+  /**
+   * Triggers background scrolling on the underlying page so Instagram loads the next batch of posts.
+   */
+  handleLoadMore() {
+    window.scrollBy({ top: window.innerHeight * 1.5, behavior: 'instant' });
+    window.dispatchEvent(new Event('scroll'));
   }
 }
 

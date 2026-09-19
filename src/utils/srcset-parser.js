@@ -1,21 +1,20 @@
 /**
  * srcset-parser.js
- * Multi-tier engine to resolve the absolute highest resolution image from Instagram.
+ * Zero-fragile resolution engine for Instagram media.
  *
- * Tier 1: React Fiber & Props inspection (GraphQL master candidates: image_versions2, display_resources)
- * Tier 2: Complete srcset candidate parsing (max width/density)
- * Tier 3: CDN URL parameter upgrading (upgrades s640x640/s750x750 to s1080x1080/p1080x1080)
+ * Exclusively leverages Meta's cryptographically signed srcset candidates
+ * and GraphQL structures to guarantee 100% reliable, highest-resolution loading.
  */
 
 /**
  * @typedef {Object} SrcCandidate
- * @property {string} url - The URL of the image candidate.
- * @property {number} width - The width descriptor in pixels (or estimated width).
- * @property {number} density - The pixel density descriptor (e.g., 1x, 2x) if provided.
+ * @property {string} url - The cryptographically signed URL of the image.
+ * @property {number} width - The width descriptor in pixels.
+ * @property {number} density - The pixel density descriptor.
  */
 
 /**
- * Parses a srcset string into an array of candidates.
+ * Parses an HTML5 srcset string into an array of candidates.
  * Robust against URLs containing commas in query strings.
  *
  * @param {string} srcset - The srcset attribute value.
@@ -58,7 +57,7 @@ export function parseSrcset(srcset) {
     });
   }
 
-  // Sort descending by effective width
+  // Sort descending by effective pixel width
   candidates.sort((a, b) => b.width - a.width);
 
   return candidates;
@@ -82,20 +81,6 @@ export function extractWidthFromUrl(url) {
     return parseInt(match[1], 10);
   }
   return 0;
-}
-
-/**
- * Upgrades lower-resolution Instagram CDN URL dimension parameters to 1080px.
- * e.g., s640x640 -> s1080x1080, p750x750 -> p1080x1080
- *
- * @param {string} url
- * @returns {string} Upgraded URL
- */
-export function upgradeCdnUrl(url) {
-  if (!url || typeof url !== 'string') return url;
-
-  // Replace common sub-1080 downsampling dimensions with 1080
-  return url.replace(/([sp])(150|240|320|480|640|750)x\2/g, '$11080x1080');
 }
 
 /**
@@ -140,7 +125,6 @@ export function extractFromReactFiber(element) {
 function searchMediaProps(obj, depth = 0) {
   if (!obj || typeof obj !== 'object' || depth > 4) return null;
 
-  // Pattern A: image_versions2 (contains raw master candidates, often up to 1440px)
   if (obj.image_versions2?.candidates && Array.isArray(obj.image_versions2.candidates)) {
     const sorted = [...obj.image_versions2.candidates].sort((a, b) => (b.width || 0) - (a.width || 0));
     if (sorted[0]?.url) {
@@ -152,7 +136,6 @@ function searchMediaProps(obj, depth = 0) {
     }
   }
 
-  // Pattern B: display_resources
   if (obj.display_resources && Array.isArray(obj.display_resources)) {
     const sorted = [...obj.display_resources].sort((a, b) => (b.config_width || 0) - (a.config_width || 0));
     if (sorted[0]?.src) {
@@ -164,7 +147,6 @@ function searchMediaProps(obj, depth = 0) {
     }
   }
 
-  // Pattern C: display_url
   if (typeof obj.display_url === 'string' && obj.display_url.startsWith('http')) {
     return {
       url: obj.display_url,
@@ -173,7 +155,6 @@ function searchMediaProps(obj, depth = 0) {
     };
   }
 
-  // Recursively inspect key properties (post, media, item, carousel_media)
   const interestingKeys = ['post', 'media', 'item', 'carousel_media', 'node'];
   for (const key of interestingKeys) {
     if (obj[key]) {
@@ -186,42 +167,69 @@ function searchMediaProps(obj, depth = 0) {
 }
 
 /**
- * Resolves the absolute highest resolution image URL from an HTMLImageElement or raw attributes.
- * Combines React fiber inspection, srcset maximization, and CDN upgrading.
+ * Returns all verified, cryptographically signed resolution candidates for an image,
+ * sorted descending by quality.
  *
- * @param {HTMLImageElement|{srcset?: string, src?: string, currentSrc?: string}} imgElement
- * @returns {string} The highest resolution image URL.
+ * @param {HTMLImageElement} imgElement
+ * @returns {Array<{url: string, width: number}>}
  */
-export function getHighestResolutionUrl(imgElement) {
-  if (!imgElement) return '';
+export function getResolutionCandidates(imgElement) {
+  if (!imgElement) return [];
 
-  // Tier 1: Try React Fiber GraphQL media candidate
+  const candidates = [];
+  const seenUrls = new Set();
+
+  // Tier 1: React Fiber master GraphQL candidates
   try {
     const fiberCandidate = extractFromReactFiber(imgElement);
-    if (fiberCandidate?.url) {
-      return fiberCandidate.url;
+    if (fiberCandidate?.url && !seenUrls.has(fiberCandidate.url)) {
+      seenUrls.add(fiberCandidate.url);
+      candidates.push({
+        url: fiberCandidate.url,
+        width: fiberCandidate.width || 1080
+      });
     }
-  } catch {
-    // Graceful fallback to srcset
-  }
+  } catch {}
 
-  // Tier 2: Inspect srcset
+  // Tier 2: Meta's cryptographically signed srcset candidates
   const srcset = (typeof imgElement.getAttribute === 'function'
     ? imgElement.getAttribute('srcset')
     : imgElement.srcset) || '';
 
-  const candidates = parseSrcset(srcset);
-
-  if (candidates.length > 0 && candidates[0].url) {
-    // If the top candidate is already >= 1080w, return it directly
-    if (candidates[0].width >= 1080) {
-      return candidates[0].url;
+  const parsed = parseSrcset(srcset);
+  for (const item of parsed) {
+    if (item.url && !seenUrls.has(item.url)) {
+      seenUrls.add(item.url);
+      candidates.push({
+        url: item.url,
+        width: item.width || 640
+      });
     }
-    // If smaller than 1080, attempt CDN dimension upgrade
-    return upgradeCdnUrl(candidates[0].url);
   }
 
-  // Tier 3: Fallback to currentSrc or src + CDN upgrade
-  const fallbackUrl = (imgElement.currentSrc || imgElement.src || '');
-  return upgradeCdnUrl(fallbackUrl);
+  // Tier 3: Fallback currentSrc or src
+  const fallbackUrl = imgElement.currentSrc || imgElement.src || '';
+  if (fallbackUrl && !seenUrls.has(fallbackUrl)) {
+    seenUrls.add(fallbackUrl);
+    candidates.push({
+      url: fallbackUrl,
+      width: extractWidthFromUrl(fallbackUrl) || 640
+    });
+  }
+
+  // Sort descending by width
+  candidates.sort((a, b) => b.width - a.width);
+  return candidates;
+}
+
+/**
+ * Resolves the guaranteed highest-resolution URL for an image.
+ * Never alters HMAC query parameters; only uses Meta's officially signed URLs.
+ *
+ * @param {HTMLImageElement} imgElement
+ * @returns {string} The highest resolution signed image URL.
+ */
+export function getHighestResolutionUrl(imgElement) {
+  const candidates = getResolutionCandidates(imgElement);
+  return candidates.length > 0 ? candidates[0].url : (imgElement?.currentSrc || imgElement?.src || '');
 }

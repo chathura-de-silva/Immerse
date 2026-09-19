@@ -253,6 +253,7 @@ export class ViewerOverlay {
    */
   updateSequence(newItems) {
     if (!newItems || newItems.length === 0) return;
+    const oldLength = this.items.length;
     const currentItem = this.items[this.currentIndex];
     this.items = newItems;
 
@@ -262,7 +263,14 @@ export class ViewerOverlay {
         this.currentIndex = newIdx;
       }
     }
-    this._updateCounter();
+
+    // Auto-advance if user was waiting at the boundary for new posts
+    if (this._waitingForNextBatch && this.items.length > oldLength) {
+      this._waitingForNextBatch = false;
+      this.loadImage(oldLength);
+    } else {
+      this._updateCounter();
+    }
   }
 
   /**
@@ -275,6 +283,11 @@ export class ViewerOverlay {
 
     this.currentIndex = index;
     const item = this.items[index];
+
+    // Proactively trigger background loading when nearing the end of the loaded sequence
+    if (this.currentIndex >= this.items.length - 3 && this.onLoadMore) {
+      this.onLoadMore();
+    }
 
     this.resetTransform();
     this.dom.spinner.style.display = 'block';
@@ -326,7 +339,8 @@ export class ViewerOverlay {
       this.dom.prevBtn.style.display = 'flex';
       this.dom.nextBtn.style.display = 'flex';
       this.dom.prevBtn.disabled = this.currentIndex === 0;
-      this.dom.nextBtn.disabled = this.currentIndex === total - 1;
+      // Never disable next if we can load more from feed
+      this.dom.nextBtn.disabled = false;
     } else {
       this.dom.counter.style.display = 'none';
       this.dom.prevBtn.style.display = 'none';
@@ -345,9 +359,18 @@ export class ViewerOverlay {
   }
 
   next() {
+    // If approaching or at the end of loaded images, trigger background infinite load
+    if (this.currentIndex >= this.items.length - 2 && this.onLoadMore) {
+      this.onLoadMore();
+    }
+
     if (this.currentIndex < this.items.length - 1) {
       this.loadImage(this.currentIndex + 1);
       this._resetIdleTimer();
+    } else if (this.onLoadMore) {
+      this.dom.counter.textContent = 'Loading next batch from feed...';
+      this._waitingForNextBatch = true;
+      this.onLoadMore();
     }
   }
 

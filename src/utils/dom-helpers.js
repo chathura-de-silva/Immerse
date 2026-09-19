@@ -88,8 +88,8 @@ export function findClosestPost(element) {
   return (
     element.closest('article') ||
     element.closest('div[role="dialog"]') ||
-    element.closest('div._aagv') ||
-    element.closest('a[href^="/p/"]') ||
+    element.closest('a[href*="/p/"]') ||
+    element.closest('a[href*="/reel/"]') ||
     element.closest('div[role="presentation"]') ||
     element.parentElement
   );

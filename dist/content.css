@@ -336,70 +336,58 @@
 
 /* --- hover-button.css --- */
 /* ==========================================================================
-   Immerse - Liquid Glass Hover Button Styles
-   Ultra-modern refractive glassmorphic aesthetic with specular highlights
+   Immerse - Modern Glassy Transparent Hover Button
+   Understated, refined frosted glass design without distracting glow
    ========================================================================== */
 
 .immerse-hover-btn-container {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 10px;
+  right: 10px;
   z-index: 2147483640;
-  pointer-events: none; /* Let clicks pass through container */
-  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .immerse-hover-btn {
-  pointer-events: auto; /* Button itself receives interactions */
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 999px; /* Pill shape */
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 999px; /* Pill */
 
-  /* Liquid Glass Multi-layer Refractive Background */
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.32) 0%,
-    rgba(255, 255, 255, 0.1) 45%,
-    rgba(255, 255, 255, 0.02) 100%
-  ), rgba(18, 18, 24, 0.48);
+  /* Truly modern neutral frosted glass */
+  background: rgba(16, 16, 20, 0.55);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
 
-  /* Deep optical blur & saturation */
-  backdrop-filter: blur(24px) saturate(220%) brightness(115%);
-  -webkit-backdrop-filter: blur(24px) saturate(220%) brightness(115%);
-
-  /* Specular double inner-bevel + atmospheric ambient glow */
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  box-shadow:
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.65),
-    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.28),
-    0 8px 24px -2px rgba(0, 0, 0, 0.45),
-    0 0 14px rgba(255, 255, 255, 0.12);
+  /* Subtle specular rim without neon glow */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3),
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.3);
 
   color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
   cursor: pointer;
   opacity: 0;
-  transform: translateY(-4px) scale(0.92);
+  transform: translateY(-3px) scale(0.95);
   user-select: none;
   outline: none;
 
-  /* Spring physics transition */
   transition:
-    opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-    background 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.25s ease;
+    opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
-/* Shown when parent tile is hovered anywhere or when active */
+/* Shown when the image tile is hovered anywhere */
 .immerse-hover-btn.immerse-visible,
 :hover > .immerse-hover-btn-container > .immerse-hover-btn,
 .immerse-hover-btn-container:hover > .immerse-hover-btn {
@@ -407,45 +395,29 @@
   transform: translateY(0) scale(1);
 }
 
-/* Liquid Glass Hover State with subtle chromatic bloom */
+/* Understated, elegant hover state */
 .immerse-hover-btn:hover {
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.46) 0%,
-    rgba(255, 255, 255, 0.18) 45%,
-    rgba(255, 255, 255, 0.06) 100%
-  ), rgba(28, 28, 38, 0.68);
-
-  border-color: rgba(255, 255, 255, 0.6);
-  transform: translateY(-2px) scale(1.08);
-
-  box-shadow:
-    inset 0 1px 2px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.35),
-    0 12px 32px -4px rgba(0, 0, 0, 0.6),
-    0 0 20px rgba(112, 196, 255, 0.55);
+  background: rgba(28, 28, 36, 0.75);
+  border-color: rgba(255, 255, 255, 0.38);
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4),
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .immerse-hover-btn:active {
-  transform: translateY(1px) scale(0.96);
-  box-shadow:
-    inset 0 1px 1px 0 rgba(0, 0, 0, 0.3),
-    0 4px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(1px) scale(0.97);
 }
 
-/* Icon with glass glow */
 .immerse-hover-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   stroke: #ffffff;
   stroke-width: 2.2;
   flex-shrink: 0;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
 }
 
 .immerse-hover-btn span {
   line-height: 1;
-  color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  color: #f5f5f7;
 }
 

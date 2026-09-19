@@ -122,7 +122,7 @@
   }
   function findClosestPost(element) {
     if (!element) return null;
-    return element.closest("article") || element.closest('div[role="dialog"]') || element.closest("div._aagv") || element.closest('a[href^="/p/"]') || element.closest('div[role="presentation"]') || element.parentElement;
+    return element.closest("article") || element.closest('div[role="dialog"]') || element.closest('a[href*="/p/"]') || element.closest('a[href*="/reel/"]') || element.closest('div[role="presentation"]') || element.parentElement;
   }
   function findPostImages(postContainer) {
     if (!postContainer) return [];
@@ -333,6 +333,7 @@
      */
     updateSequence(newItems) {
       if (!newItems || newItems.length === 0) return;
+      const oldLength = this.items.length;
       const currentItem = this.items[this.currentIndex];
       this.items = newItems;
       if (currentItem) {
@@ -341,7 +342,12 @@
           this.currentIndex = newIdx;
         }
       }
-      this._updateCounter();
+      if (this._waitingForNextBatch && this.items.length > oldLength) {
+        this._waitingForNextBatch = false;
+        this.loadImage(oldLength);
+      } else {
+        this._updateCounter();
+      }
     }
     /**
      * Loads the specified image index into the lightbox.
@@ -352,6 +358,9 @@
       if (!this.items[index]) return;
       this.currentIndex = index;
       const item = this.items[index];
+      if (this.currentIndex >= this.items.length - 3 && this.onLoadMore) {
+        this.onLoadMore();
+      }
       this.resetTransform();
       this.dom.spinner.style.display = "block";
       this.dom.img.style.opacity = "0";
@@ -391,7 +400,7 @@
         this.dom.prevBtn.style.display = "flex";
         this.dom.nextBtn.style.display = "flex";
         this.dom.prevBtn.disabled = this.currentIndex === 0;
-        this.dom.nextBtn.disabled = this.currentIndex === total - 1;
+        this.dom.nextBtn.disabled = false;
       } else {
         this.dom.counter.style.display = "none";
         this.dom.prevBtn.style.display = "none";
@@ -408,9 +417,16 @@
       });
     }
     next() {
+      if (this.currentIndex >= this.items.length - 2 && this.onLoadMore) {
+        this.onLoadMore();
+      }
       if (this.currentIndex < this.items.length - 1) {
         this.loadImage(this.currentIndex + 1);
         this._resetIdleTimer();
+      } else if (this.onLoadMore) {
+        this.dom.counter.textContent = "Loading next batch from feed...";
+        this._waitingForNextBatch = true;
+        this.onLoadMore();
       }
     }
     prev() {
@@ -581,19 +597,62 @@
     constructor({ onTrigger, getSettings }) {
       this.onTrigger = onTrigger;
       this.getSettings = getSettings;
-      this.attachedTiles = /* @__PURE__ */ new WeakSet();
+      this.tileToButtonMap = /* @__PURE__ */ new Map();
+      this.activeButton = null;
+      this._initDelegatedHover();
     }
     /**
-     * Attaches a hover trigger to an image or its parent tile in the grid or feed.
+     * Centralized delegated hover detection ensuring the button appears
+     * whenever the user hovers ANYWHERE within the image tile (grid item or feed card).
+     */
+    _initDelegatedHover() {
+      let hideTimer = null;
+      document.addEventListener("pointerover", (e) => {
+        const settings = this.getSettings ? this.getSettings() : { enabled: true };
+        if (!settings.enabled) return;
+        const target = e.target;
+        if (!target) return;
+        const tile = target.closest('a[href*="/p/"]') || target.closest('a[href*="/reel/"]') || target.closest("article") || target.closest('div[role="dialog"]');
+        if (tile && this.tileToButtonMap.has(tile)) {
+          if (hideTimer) {
+            clearTimeout(hideTimer);
+            hideTimer = null;
+          }
+          const btn = this.tileToButtonMap.get(tile);
+          if (this.activeButton && this.activeButton !== btn) {
+            this.activeButton.classList.remove("immerse-visible");
+          }
+          this.activeButton = btn;
+          btn.classList.add("immerse-visible");
+        }
+      }, { passive: true });
+      document.addEventListener("pointerout", (e) => {
+        const target = e.target;
+        if (!target) return;
+        const tile = target.closest('a[href*="/p/"]') || target.closest('a[href*="/reel/"]') || target.closest("article");
+        if (tile && this.tileToButtonMap.has(tile)) {
+          const related = e.relatedTarget;
+          if (!related || !tile.contains(related)) {
+            const btn = this.tileToButtonMap.get(tile);
+            if (hideTimer) clearTimeout(hideTimer);
+            hideTimer = setTimeout(() => {
+              btn.classList.remove("immerse-visible");
+              if (this.activeButton === btn) this.activeButton = null;
+            }, 120);
+          }
+        }
+      }, { passive: true });
+    }
+    /**
+     * Attaches the hover trigger to a media tile.
      *
      * @param {HTMLImageElement} imgElement
      * @param {HTMLElement} container
      */
     attach(imgElement, container) {
       if (!imgElement) return;
-      const tile = imgElement.closest('a[href^="/p/"]') || imgElement.closest('a[href^="/reel/"]') || imgElement.closest("div._aabd") || imgElement.closest("article") || container || imgElement.parentElement;
-      if (!tile || this.attachedTiles.has(tile)) return;
-      this.attachedTiles.add(tile);
+      const tile = imgElement.closest('a[href*="/p/"]') || imgElement.closest('a[href*="/reel/"]') || imgElement.closest("article") || container || imgElement.parentElement;
+      if (!tile || this.tileToButtonMap.has(tile)) return;
       const tileStyle = window.getComputedStyle(tile);
       if (tileStyle.position === "static") {
         tile.style.position = "relative";
@@ -605,8 +664,8 @@
         className: "immerse-hover-btn",
         attributes: {
           type: "button",
-          title: "View in Ultra-HD Fullscreen (Immerse)",
-          "aria-label": "View in Ultra-HD Fullscreen"
+          title: "Open in Fullscreen Ultra-HD (Immerse)",
+          "aria-label": "Open in Fullscreen Ultra-HD"
         },
         innerHTML: `
         <svg viewBox="0 0 24 24" fill="none">
@@ -622,26 +681,7 @@
         this.onTrigger(imgElement, tile);
       });
       btnContainer.appendChild(btn);
-      let hideTimer = null;
-      const showBtn = () => {
-        if (hideTimer) {
-          clearTimeout(hideTimer);
-          hideTimer = null;
-        }
-        const settings = this.getSettings ? this.getSettings() : { enabled: true };
-        if (settings.enabled !== false) {
-          btn.classList.add("immerse-visible");
-        }
-      };
-      const hideBtn = () => {
-        if (hideTimer) clearTimeout(hideTimer);
-        hideTimer = setTimeout(() => {
-          btn.classList.remove("immerse-visible");
-        }, 120);
-      };
-      tile.addEventListener("mouseenter", showBtn, { passive: true });
-      tile.addEventListener("mousemove", showBtn, { passive: true });
-      tile.addEventListener("mouseleave", hideBtn, { passive: true });
+      this.tileToButtonMap.set(tile, btn);
       imgElement.addEventListener("click", (e) => {
         const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: "both" };
         if (!settings.enabled) return;
@@ -695,10 +735,6 @@
       return parseInt(match[1], 10);
     }
     return 0;
-  }
-  function upgradeCdnUrl(url) {
-    if (!url || typeof url !== "string") return url;
-    return url.replace(/([sp])(150|240|320|480|640|750)x\2/g, "$11080x1080");
   }
   function extractFromReactFiber(element) {
     if (!element || typeof element !== "object") return null;
@@ -760,25 +796,46 @@
     }
     return null;
   }
-  function getHighestResolutionUrl(imgElement) {
-    if (!imgElement) return "";
+  function getResolutionCandidates(imgElement) {
+    if (!imgElement) return [];
+    const candidates = [];
+    const seenUrls = /* @__PURE__ */ new Set();
     try {
       const fiberCandidate = extractFromReactFiber(imgElement);
-      if (fiberCandidate?.url) {
-        return fiberCandidate.url;
+      if (fiberCandidate?.url && !seenUrls.has(fiberCandidate.url)) {
+        seenUrls.add(fiberCandidate.url);
+        candidates.push({
+          url: fiberCandidate.url,
+          width: fiberCandidate.width || 1080
+        });
       }
     } catch {
     }
     const srcset = (typeof imgElement.getAttribute === "function" ? imgElement.getAttribute("srcset") : imgElement.srcset) || "";
-    const candidates = parseSrcset(srcset);
-    if (candidates.length > 0 && candidates[0].url) {
-      if (candidates[0].width >= 1080) {
-        return candidates[0].url;
+    const parsed = parseSrcset(srcset);
+    for (const item of parsed) {
+      if (item.url && !seenUrls.has(item.url)) {
+        seenUrls.add(item.url);
+        candidates.push({
+          url: item.url,
+          width: item.width || 640
+        });
       }
-      return upgradeCdnUrl(candidates[0].url);
     }
     const fallbackUrl = imgElement.currentSrc || imgElement.src || "";
-    return upgradeCdnUrl(fallbackUrl);
+    if (fallbackUrl && !seenUrls.has(fallbackUrl)) {
+      seenUrls.add(fallbackUrl);
+      candidates.push({
+        url: fallbackUrl,
+        width: extractWidthFromUrl(fallbackUrl) || 640
+      });
+    }
+    candidates.sort((a, b) => b.width - a.width);
+    return candidates;
+  }
+  function getHighestResolutionUrl(imgElement) {
+    const candidates = getResolutionCandidates(imgElement);
+    return candidates.length > 0 ? candidates[0].url : imgElement?.currentSrc || imgElement?.src || "";
   }
 
   // src/modules/media-detector.js
@@ -849,7 +906,7 @@
      */
     scan(root) {
       if (!root || !root.querySelectorAll) return;
-      const selector = 'article img, div._aagv img, a[href^="/p/"] img, a[href^="/reel/"] img, div[role="dialog"] img';
+      const selector = 'article img, a[href*="/p/"] img, a[href*="/reel/"] img, div[role="dialog"] img, main img[srcset], div[role="presentation"] img';
       const images = Array.from(root.querySelectorAll(selector));
       if (root.tagName === "IMG" && root.matches(selector)) {
         images.push(root);
@@ -859,7 +916,7 @@
         const isAvatar = img.alt?.toLowerCase().includes("profile picture") || img.closest("header") !== null || img.width < 120 && img.width > 0;
         if (isAvatar) continue;
         this.processedImages.add(img);
-        const container = img.closest('a[href^="/p/"]') || img.closest('a[href^="/reel/"]') || img.closest("div._aagv") || img.closest("article") || img.parentElement;
+        const container = img.closest('a[href*="/p/"]') || img.closest('a[href*="/reel/"]') || img.closest("article") || img.closest('div[role="dialog"]') || img.parentElement;
         if (container) {
           this.mediaEntries.push({ img, container });
           this.onMediaFound(img, container);
@@ -1043,7 +1100,10 @@
       if (this.initialized) return;
       const settings = await settingsStore.init();
       this.sequencer = new GallerySequencer();
-      this.overlay = new ViewerOverlay(settings);
+      this.overlay = new ViewerOverlay({
+        ...settings,
+        onLoadMore: () => this.handleLoadMore()
+      });
       this.hoverButtons = new HoverButtonManager({
         onTrigger: (img, container) => this.handleTrigger(img, container),
         getSettings: () => settingsStore.get()
@@ -1112,6 +1172,13 @@
           this.overlay.close();
         }
       }
+    }
+    /**
+     * Triggers background scrolling on the underlying page so Instagram loads the next batch of posts.
+     */
+    handleLoadMore() {
+      window.scrollBy({ top: window.innerHeight * 1.5, behavior: "instant" });
+      window.dispatchEvent(new Event("scroll"));
     }
   };
   var app = new ImmerseApp();
