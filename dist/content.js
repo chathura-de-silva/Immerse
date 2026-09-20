@@ -484,22 +484,10 @@
     return candidates.length > 0 ? candidates[0].url : imgElement?.currentSrc || imgElement?.src || "";
   }
 
-  // src/modules/viewer-overlay.js
-  var ViewerOverlay = class {
-    constructor(options = {}) {
-      this.options = options;
-      this.onLoadMore = options.onLoadMore || null;
-      this.onClose = options.onClose || null;
-      this.isOpen = false;
-      this._isTransitioning = false;
-      this._isLoading = false;
-      this.posts = [];
-      this.currentPostIndex = 0;
-      this.currentSlideIndex = 0;
-      this._pendingNavigation = null;
-      this._navPollInterval = null;
-      this._loadMoreRetryInterval = null;
-      this._activeLoadingImg = null;
+  // src/modules/viewer/zoom-pan.js
+  var ZoomPanController = class {
+    constructor(overlay) {
+      this.overlay = overlay;
       this.scale = 1;
       this.panX = 0;
       this.panY = 0;
@@ -512,338 +500,414 @@
       this.startY = 0;
       this.minScale = 0.5;
       this.maxScale = 6;
-      this._idleTimer = null;
-      this._cursorTimer = null;
-      this._spinnerTimeout = null;
-      this._badgeTextTimeout = null;
-      this._counterTextTimeout = null;
-      this._lastNavTime = 0;
-      this._navDirection = 1;
-      this.dom = null;
-      this._handleKeyDown = this._handleKeyDown.bind(this);
-      this._handleWheel = this._handleWheel.bind(this);
-      this._handleMouseDown = this._handleMouseDown.bind(this);
-      this._handleMouseMove = this._handleMouseMove.bind(this);
-      this._handleMouseUp = this._handleMouseUp.bind(this);
-      this._handleDblClick = this._handleDblClick.bind(this);
-      this._handleRootMouseMove = this._handleRootMouseMove.bind(this);
-      this._handleRootPointerDown = this._handleRootPointerDown.bind(this);
-      this._resetIdleTimer = this._resetIdleTimer.bind(this);
-      this._wakeCursor = this._wakeCursor.bind(this);
+      this.handleWheel = this.handleWheel.bind(this);
+      this.handleMouseDown = this.handleMouseDown.bind(this);
+      this.handleMouseMove = this.handleMouseMove.bind(this);
+      this.handleMouseUp = this.handleMouseUp.bind(this);
+      this.handleDblClick = this.handleDblClick.bind(this);
     }
-    /**
-     * Builds the DOM elements for the overlay with modern frosted glass styling.
-     */
-    _ensureDom() {
-      if (this.dom) return;
-      const root = createElement("div", {
-        className: "immerse-overlay-root",
-        attributes: { "aria-modal": "true", role: "dialog" }
-      });
-      const backdrop = createElement("div", {
-        className: "immerse-backdrop",
-        events: { click: (e) => {
-          if (e.target === backdrop || e.target === stage) this.close();
-        } }
-      });
-      const header = createElement("div", { className: "immerse-header" });
-      const badgeText = createElement("span", {
-        className: "immerse-badge-text",
-        textContent: "Immersive View"
-      });
-      const showBadge = !!this.options.showResolutionBadge;
-      const badge = createElement("div", {
-        className: "immerse-badge",
-        style: { display: showBadge ? "inline-flex" : "none" }
-      });
-      badge.append(badgeText);
-      const counterText = createElement("span", {
-        className: "immerse-counter-text",
-        textContent: "Photo 1"
-      });
-      const counter = createElement("div", { className: "immerse-counter" });
-      counter.append(counterText);
-      const headerLeft = createElement("div", { className: "immerse-header-left" });
-      headerLeft.append(badge, counter);
-      const controls = createElement("div", { className: "immerse-controls" });
-      const viewPostBtn = createElement("button", {
-        className: "immerse-btn immerse-btn-view-post",
-        innerHTML: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
-        attributes: { title: "View Post on Instagram (V)", "aria-label": "View Post on Instagram" },
-        events: { click: () => this.openPostOnInstagram() }
-      });
-      const zoomResetBtn = createElement("button", {
-        className: "immerse-btn immerse-btn-zoom",
-        textContent: "100%",
-        attributes: { title: "Reset zoom (0)", "aria-label": "Reset zoom" },
-        events: { click: () => this.resetTransform() }
-      });
-      const fullscreenBtn = createElement("button", {
-        className: "immerse-btn immerse-btn-fullscreen",
-        innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
-        attributes: { title: "Toggle Fullscreen (F)", "aria-label": "Toggle Fullscreen" },
-        events: { click: () => this.toggleNativeFullscreen() }
-      });
-      const closeBtn = createElement("button", {
-        className: "immerse-btn immerse-btn-close",
-        innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
-        attributes: { title: "Close (Esc)", "aria-label": "Close" },
-        events: { click: () => this.close() }
-      });
-      controls.append(viewPostBtn, zoomResetBtn, fullscreenBtn, closeBtn);
-      header.append(headerLeft, controls);
-      const stage = createElement("div", {
-        className: "immerse-stage",
-        events: {
-          wheel: this._handleWheel,
-          mousedown: this._handleMouseDown,
-          dblclick: this._handleDblClick
+    resetZoomState() {
+      if (this._zoomRafId) {
+        cancelAnimationFrame(this._zoomRafId);
+        this._zoomRafId = null;
+      }
+      this.scale = 1;
+      this.panX = 0;
+      this.panY = 0;
+      this._targetScale = 1;
+      this._targetPanX = 0;
+      this._targetPanY = 0;
+      const dom = this.overlay.dom;
+      if (dom?.zoomResetBtn) {
+        dom.zoomResetBtn.textContent = "100%";
+      }
+      if (dom?.stage) {
+        dom.stage.classList.remove("immerse-can-pan", "immerse-is-panning");
+      }
+    }
+    resetTransform() {
+      this.resetZoomState();
+      this._applyTransform(true);
+    }
+    _applyTransform(smooth = false) {
+      const dom = this.overlay.dom;
+      if (!dom?.img) return;
+      if (smooth) {
+        dom.img.style.transition = "transform 0.22s cubic-bezier(0.2, 0, 0, 1), opacity 0.28s var(--immerse-smooth)";
+      } else {
+        dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
+      }
+      dom.img.style.transform = `translate3d(${this.panX}px, ${this.panY}px, 0) scale(${this.scale})`;
+      if (dom.zoomResetBtn) {
+        dom.zoomResetBtn.textContent = `${Math.round(this.scale * 100)}%`;
+      }
+      if (this.scale > 1.05) {
+        dom.stage.classList.add("immerse-can-pan");
+      } else {
+        dom.stage.classList.remove("immerse-can-pan", "immerse-is-panning");
+      }
+    }
+    handleWheel(e) {
+      if (!this.overlay.isOpen) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.overlay.options.wheelZoom === false) return;
+      let delta = -e.deltaY;
+      if (e.deltaMode === 1) {
+        delta *= 32;
+      } else if (e.deltaMode === 2) {
+        delta *= 300;
+      }
+      delta = Math.max(-140, Math.min(140, delta));
+      const zoomFactor = Math.exp(delta * 2e-3);
+      const newTargetScale = Math.max(this.minScale, Math.min(this.maxScale, this._targetScale * zoomFactor));
+      if (Math.abs(newTargetScale - this._targetScale) < 1e-4) return;
+      const rect = this.overlay.dom.stage.getBoundingClientRect();
+      const mouseX = e.clientX - (rect.left + rect.width / 2);
+      const mouseY = e.clientY - (rect.top + rect.height / 2);
+      const ratio = newTargetScale / this._targetScale;
+      let newTargetPanX = mouseX - (mouseX - this._targetPanX) * ratio;
+      let newTargetPanY = mouseY - (mouseY - this._targetPanY) * ratio;
+      if (newTargetScale <= 1) {
+        newTargetPanX = 0;
+        newTargetPanY = 0;
+      }
+      this._targetScale = newTargetScale;
+      this._targetPanX = newTargetPanX;
+      this._targetPanY = newTargetPanY;
+      this._startZoomRaf();
+    }
+    _startZoomRaf() {
+      if (this._zoomRafId) return;
+      const tick = () => {
+        const ease = 0.28;
+        const diffScale = this._targetScale - this.scale;
+        const diffPanX = this._targetPanX - this.panX;
+        const diffPanY = this._targetPanY - this.panY;
+        if (Math.abs(diffScale) < 1e-3 && Math.abs(diffPanX) < 0.2 && Math.abs(diffPanY) < 0.2) {
+          this.scale = this._targetScale;
+          this.panX = this._targetPanX;
+          this.panY = this._targetPanY;
+          this._applyTransform(false);
+          this._zoomRafId = null;
+          return;
         }
-      });
-      const prevPostBtn = createElement("button", {
-        className: "immerse-nav-btn immerse-nav-prev",
-        innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
-        attributes: { title: "Previous Post (Left Arrow)", "aria-label": "Previous Post" },
-        events: {
-          click: (e) => {
-            e.stopPropagation();
-            this.prevPost();
-          },
-          dblclick: (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-          }
-        }
-      });
-      const nextPostBtn = createElement("button", {
-        className: "immerse-nav-btn immerse-nav-next",
-        innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
-        attributes: { title: "Next Post (Right Arrow)", "aria-label": "Next Post" },
-        events: {
-          click: (e) => {
-            e.stopPropagation();
-            this.nextPost();
-          },
-          dblclick: (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-          }
-        }
-      });
-      const imgWrapper = createElement("div", { className: "immerse-image-wrapper" });
-      const imgPrev = createElement("img", {
-        className: "immerse-image immerse-image-prev",
-        attributes: { draggable: "false" },
-        style: { opacity: "0", display: "none", pointerEvents: "none" }
-      });
-      const img = createElement("img", {
-        className: "immerse-image immerse-image-curr",
-        attributes: { draggable: "false" },
-        style: { opacity: "0", pointerEvents: "none" }
-      });
-      const shield = createElement("div", {
-        className: "immerse-shield",
-        attributes: { "aria-hidden": "true" }
-      });
-      const spinner = createElement("div", {
-        className: "immerse-spinner",
-        innerHTML: '<div class="immerse-spinner-ring"></div>'
-      });
-      imgWrapper.append(imgPrev, img, shield, spinner);
-      const carouselCtrl = createElement("div", {
-        className: "immerse-carousel-controller",
-        style: { display: "none" }
-      });
-      const prevSlideBtn = createElement("button", {
-        className: "immerse-carousel-btn",
-        innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
-        attributes: { title: "Previous Slide (Up Arrow)", "aria-label": "Previous Slide" },
-        events: {
-          click: (e) => {
-            e.stopPropagation();
-            this.prevSlide();
-          },
-          dblclick: (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-          }
-        }
-      });
-      const dotsContainer = createElement("div", { className: "immerse-dots" });
-      const nextSlideBtn = createElement("button", {
-        className: "immerse-carousel-btn",
-        innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
-        attributes: { title: "Next Slide (Down Arrow)", "aria-label": "Next Slide" },
-        events: {
-          click: (e) => {
-            e.stopPropagation();
-            this.nextSlide();
-          },
-          dblclick: (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-          }
-        }
-      });
-      const carouselLabel = createElement("span", {
-        className: "immerse-carousel-label",
-        textContent: "Slide 1/1"
-      });
-      carouselCtrl.append(prevSlideBtn, dotsContainer, carouselLabel, nextSlideBtn);
-      stage.append(prevPostBtn, imgWrapper, nextPostBtn, carouselCtrl);
-      root.append(backdrop, header, stage);
-      root.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      });
-      root.addEventListener("dragstart", (e) => e.preventDefault());
-      root.addEventListener("selectstart", (e) => e.preventDefault());
-      this.dom = {
-        root,
-        backdrop,
-        header,
-        badge,
-        badgeText,
-        counter,
-        counterText,
-        viewPostBtn,
-        zoomResetBtn,
-        fullscreenBtn,
-        closeBtn,
-        stage,
-        prevPostBtn,
-        nextPostBtn,
-        imgWrapper,
-        imgPrev,
-        img,
-        shield,
-        spinner,
-        carouselCtrl,
-        prevSlideBtn,
-        nextSlideBtn,
-        dotsContainer,
-        carouselLabel
+        this.scale += diffScale * ease;
+        this.panX += diffPanX * ease;
+        this.panY += diffPanY * ease;
+        this._applyTransform(false);
+        this._zoomRafId = requestAnimationFrame(tick);
       };
-      document.addEventListener("mousemove", this._handleMouseMove);
-      document.addEventListener("mouseup", this._handleMouseUp);
-      root.addEventListener("mousemove", this._handleRootMouseMove);
-      root.addEventListener("pointerdown", this._handleRootPointerDown);
-      document.addEventListener("fullscreenchange", () => this._updateFullscreenButtonState());
+      this._zoomRafId = requestAnimationFrame(tick);
     }
-    /**
-     * Opens the lightbox overlay with the complete gallery of posts.
-     *
-     * @param {Array<Object>} posts Array of post objects
-     * @param {number} [startPostIndex=0]
-     * @param {number} [startSlideIndex=0]
-     */
-    open(posts, startPostIndex = 0, startSlideIndex = 0) {
-      if (!posts || posts.length === 0) return;
-      this._ensureDom();
-      this.posts = posts;
-      this.currentPostIndex = Math.max(0, Math.min(startPostIndex, posts.length - 1));
-      this.currentSlideIndex = startSlideIndex;
-      if (this.dom.img) {
-        this.dom.img.src = "";
-        this.dom.img.style.opacity = "0";
-        this.dom.img.style.transform = "translate3d(0, 0, 0)";
+    handleMouseDown(e) {
+      if (!this.overlay.isOpen || e.button !== 0) return;
+      if (this.scale <= 1) return;
+      if (this._zoomRafId) {
+        cancelAnimationFrame(this._zoomRafId);
+        this._zoomRafId = null;
       }
-      if (this.dom.imgPrev) {
-        this.dom.imgPrev.src = "";
-        this.dom.imgPrev.style.display = "none";
-        this.dom.imgPrev.style.opacity = "0";
-      }
-      if (!document.body.contains(this.dom.root)) {
-        document.body.appendChild(this.dom.root);
-      }
-      requestAnimationFrame(() => {
-        this.dom.root.classList.add("immerse-active");
-        this._resetIdleTimer();
-        this._wakeCursor();
-        this._enterNativeFullscreen();
-        this._updateFullscreenButtonState();
-      });
-      this.isOpen = true;
-      document.addEventListener("keydown", this._handleKeyDown, true);
-      this.loadCurrent();
+      this._targetScale = this.scale;
+      this._targetPanX = this.panX;
+      this._targetPanY = this.panY;
+      this.isDragging = true;
+      this.startX = e.clientX - this.panX;
+      this.startY = e.clientY - this.panY;
+      this.overlay.dom.stage.classList.add("immerse-is-panning");
+      e.preventDefault();
     }
-    /**
-     * Closes the lightbox overlay.
-     */
-    close() {
-      if (!this.isOpen || !this.dom) return;
-      this.dom.root.classList.remove("immerse-active");
-      this.dom.root.classList.remove("immerse-controls-hidden");
-      this.dom.root.classList.remove("immerse-cursor-hidden");
-      document.removeEventListener("keydown", this._handleKeyDown, true);
-      if (this._idleTimer) {
-        clearTimeout(this._idleTimer);
-        this._idleTimer = null;
+    handleMouseMove(e) {
+      if (!this.isDragging) return;
+      this.panX = e.clientX - this.startX;
+      this.panY = e.clientY - this.startY;
+      this._targetPanX = this.panX;
+      this._targetPanY = this.panY;
+      this._applyTransform(false);
+    }
+    handleMouseUp() {
+      if (this.isDragging) {
+        this.isDragging = false;
+        this.overlay.dom?.stage.classList.remove("immerse-is-panning");
       }
-      if (this._cursorTimer) {
-        clearTimeout(this._cursorTimer);
-        this._cursorTimer = null;
+    }
+    handleDblClick(e) {
+      if (!this.overlay.isOpen) return;
+      if (this._zoomRafId) {
+        cancelAnimationFrame(this._zoomRafId);
+        this._zoomRafId = null;
       }
-      if (this._spinnerTimeout) {
-        clearTimeout(this._spinnerTimeout);
-        this._spinnerTimeout = null;
+      const dom = this.overlay.dom;
+      const isImageTarget = e.target === dom?.shield || e.target === dom?.img || e.target === dom?.imgWrapper;
+      if (!isImageTarget) return;
+      if (Date.now() - this.overlay.nav.lastNavTime < 350) return;
+      e.preventDefault();
+      if (this.scale > 1.1) {
+        this.resetTransform();
+      } else {
+        this.scale = 2.5;
+        const rect = dom.stage.getBoundingClientRect();
+        const mouseX = e.clientX - (rect.left + rect.width / 2);
+        const mouseY = e.clientY - (rect.top + rect.height / 2);
+        this.panX = -mouseX * 1.5;
+        this.panY = -mouseY * 1.5;
+        this._targetScale = this.scale;
+        this._targetPanX = this.panX;
+        this._targetPanY = this.panY;
+        this._applyTransform(true);
       }
-      if (this._badgeTextTimeout) {
-        clearTimeout(this._badgeTextTimeout);
-        this._badgeTextTimeout = null;
+    }
+    zoomIn() {
+      if (this._zoomRafId) {
+        cancelAnimationFrame(this._zoomRafId);
+        this._zoomRafId = null;
       }
-      if (this._counterTextTimeout) {
-        clearTimeout(this._counterTextTimeout);
-        this._counterTextTimeout = null;
+      this.scale = Math.min(this.maxScale, this.scale * 1.25);
+      this._targetScale = this.scale;
+      this._targetPanX = this.panX;
+      this._targetPanY = this.panY;
+      this._applyTransform(true);
+    }
+    zoomOut() {
+      if (this._zoomRafId) {
+        cancelAnimationFrame(this._zoomRafId);
+        this._zoomRafId = null;
       }
-      if (this._waitingTimeout) {
-        clearTimeout(this._waitingTimeout);
-        this._waitingTimeout = null;
+      this.scale = Math.max(this.minScale, this.scale / 1.25);
+      if (this.scale <= 1) {
+        this.panX = 0;
+        this.panY = 0;
       }
-      if (this._navPollInterval) {
-        clearInterval(this._navPollInterval);
-        this._navPollInterval = null;
+      this._targetScale = this.scale;
+      this._targetPanX = this.panX;
+      this._targetPanY = this.panY;
+      this._applyTransform(true);
+    }
+  };
+
+  // src/modules/viewer/events.js
+  var EventsController = class {
+    constructor(overlay) {
+      this.overlay = overlay;
+      this.idleTimer = null;
+      this.cursorTimer = null;
+      this.handleKeyDown = this.handleKeyDown.bind(this);
+      this.handleRootMouseMove = this.handleRootMouseMove.bind(this);
+      this.handleRootPointerDown = this.handleRootPointerDown.bind(this);
+      this.handleFullscreenChange = this.handleFullscreenChange.bind(this);
+    }
+    setup() {
+      const { dom, zoom } = this.overlay;
+      document.addEventListener("keydown", this.handleKeyDown, true);
+      document.addEventListener("mousemove", zoom.handleMouseMove);
+      document.addEventListener("mouseup", zoom.handleMouseUp);
+      dom.root.addEventListener("mousemove", this.handleRootMouseMove);
+      dom.root.addEventListener("pointerdown", this.handleRootPointerDown);
+      document.addEventListener("fullscreenchange", this.handleFullscreenChange);
+      this.resetIdleTimer();
+      this.wakeCursor();
+      this.enterNativeFullscreen();
+      this.updateFullscreenButtonState();
+    }
+    cleanup() {
+      const { dom, zoom } = this.overlay;
+      document.removeEventListener("keydown", this.handleKeyDown, true);
+      document.removeEventListener("mousemove", zoom.handleMouseMove);
+      document.removeEventListener("mouseup", zoom.handleMouseUp);
+      document.removeEventListener("fullscreenchange", this.handleFullscreenChange);
+      if (this.idleTimer) {
+        clearTimeout(this.idleTimer);
+        this.idleTimer = null;
       }
-      if (this._loadMoreRetryInterval) {
-        clearInterval(this._loadMoreRetryInterval);
-        this._loadMoreRetryInterval = null;
-      }
-      this._pendingNavigation = null;
-      this._activeLoadingImg = null;
-      this.isOpen = false;
-      this._completeTransitionImmediately();
-      this.resetTransform();
-      if (this.dom?.img) {
-        this.dom.img.src = "";
-        this.dom.img.style.opacity = "0";
-      }
-      if (this.dom?.imgPrev) {
-        this.dom.imgPrev.src = "";
-        this.dom.imgPrev.style.display = "none";
-        this.dom.imgPrev.style.opacity = "0";
+      if (this.cursorTimer) {
+        clearTimeout(this.cursorTimer);
+        this.cursorTimer = null;
       }
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {
         });
       }
-      if (typeof this.onClose === "function") {
-        try {
-          this.onClose();
-        } catch (err) {
-          console.warn("[Immerse] Error in onClose handler:", err);
+    }
+    handleKeyDown(e) {
+      if (!this.overlay.isOpen) return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S" || e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      const isArrowNav = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "j", "J", "l", "L", "[", "]"].includes(e.key);
+      if (!isArrowNav) {
+        this.resetIdleTimer();
+      }
+      switch (e.key) {
+        case "Escape":
+          e.preventDefault();
+          e.stopPropagation();
+          this.overlay.close();
+          break;
+        // Primary Navigation (Posts in Grid)
+        case "ArrowRight":
+        case "l":
+        case "L":
+          e.preventDefault();
+          this.overlay.nav.nextPost();
+          break;
+        case "ArrowLeft":
+        case "j":
+        case "J":
+          e.preventDefault();
+          this.overlay.nav.prevPost();
+          break;
+        // Secondary Navigation (Carousel Slides of Current Post)
+        case "ArrowDown":
+        case "]":
+          e.preventDefault();
+          this.overlay.nav.nextSlide();
+          break;
+        case "ArrowUp":
+        case "[":
+          e.preventDefault();
+          this.overlay.nav.prevSlide();
+          break;
+        case "f":
+        case "F":
+          e.preventDefault();
+          this.toggleNativeFullscreen();
+          break;
+        case "v":
+        case "V":
+          e.preventDefault();
+          this.overlay.nav.openPostOnInstagram();
+          break;
+        case "0":
+          e.preventDefault();
+          this.overlay.zoom.resetTransform();
+          break;
+        case "+":
+        case "=":
+          e.preventDefault();
+          this.overlay.zoom.zoomIn();
+          break;
+        case "-":
+        case "_":
+          e.preventDefault();
+          this.overlay.zoom.zoomOut();
+          break;
+      }
+    }
+    isCursorInsideImage(e) {
+      const { dom, isOpen, zoom } = this.overlay;
+      if (!dom?.img || !isOpen) return false;
+      if (e.target?.closest?.(".immerse-header, .immerse-nav-btn, .immerse-carousel-controller, .immerse-btn")) {
+        return false;
+      }
+      const edgeMarginX = 55;
+      const edgeMarginY = 50;
+      const isNearScreenEdge = e.clientY <= edgeMarginY || e.clientY >= window.innerHeight - edgeMarginY || e.clientX <= edgeMarginX || e.clientX >= window.innerWidth - edgeMarginX;
+      if (isNearScreenEdge) {
+        return false;
+      }
+      const activeImg = dom.img.style.opacity !== "0" || !dom.imgPrev?.src ? dom.img : dom.imgPrev;
+      const rect = activeImg.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return false;
+      return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+    }
+    handleRootMouseMove(e) {
+      if (!this.overlay.isOpen) return;
+      this.wakeCursor();
+      if (this.isCursorInsideImage(e)) {
+        return;
+      }
+      this.resetIdleTimer();
+    }
+    handleRootPointerDown(e) {
+      if (!this.overlay.isOpen) return;
+      this.wakeCursor();
+      if (this.isCursorInsideImage(e)) {
+        return;
+      }
+      this.resetIdleTimer();
+    }
+    wakeCursor() {
+      const { dom, isOpen, zoom } = this.overlay;
+      if (!dom?.root) return;
+      dom.root.classList.remove("immerse-cursor-hidden");
+      if (this.cursorTimer) clearTimeout(this.cursorTimer);
+      this.cursorTimer = setTimeout(() => {
+        if (isOpen && !zoom.isDragging) {
+          dom.root.classList.add("immerse-cursor-hidden");
+        }
+      }, 2800);
+    }
+    resetIdleTimer() {
+      const { dom, isOpen, zoom } = this.overlay;
+      if (!dom?.root) return;
+      dom.root.classList.remove("immerse-controls-hidden");
+      if (this.idleTimer) clearTimeout(this.idleTimer);
+      this.idleTimer = setTimeout(() => {
+        if (isOpen && !zoom.isDragging) {
+          dom.root.classList.add("immerse-controls-hidden");
+        }
+      }, 3200);
+    }
+    enterNativeFullscreen() {
+      const { dom } = this.overlay;
+      if (!document.fullscreenElement && dom?.root?.requestFullscreen) {
+        dom.root.requestFullscreen().catch(() => {
+        });
+      }
+    }
+    updateFullscreenButtonState() {
+      const { dom } = this.overlay;
+      if (!dom?.fullscreenBtn) return;
+      const isFs = !!document.fullscreenElement;
+      if (isFs) {
+        dom.fullscreenBtn.title = "Back to Browser View (F)";
+        dom.fullscreenBtn.setAttribute("aria-label", "Back to Browser View");
+        dom.fullscreenBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
+      } else {
+        dom.fullscreenBtn.title = "Enter Fullscreen (F)";
+        dom.fullscreenBtn.setAttribute("aria-label", "Enter Fullscreen");
+        dom.fullscreenBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+      }
+    }
+    handleFullscreenChange() {
+      this.updateFullscreenButtonState();
+    }
+    toggleNativeFullscreen() {
+      const { dom } = this.overlay;
+      if (!document.fullscreenElement) {
+        if (dom?.root?.requestFullscreen) {
+          dom.root.requestFullscreen().catch(() => {
+          });
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {
+          });
         }
       }
-      setTimeout(() => {
-        if (!this.isOpen && this.dom?.root.parentElement) {
-          this.dom.root.parentElement.removeChild(this.dom.root);
-        }
-      }, 250);
     }
-    /**
-     * Updates posts dynamically when Instagram loads more items in the background.
-     *
-     * @param {Array<Object>} newPosts
-     */
+  };
+
+  // src/modules/viewer/navigation.js
+  var NavigationController = class {
+    constructor(overlay) {
+      this.overlay = overlay;
+      this.posts = [];
+      this.currentPostIndex = 0;
+      this.currentSlideIndex = 0;
+      this.pendingNavigation = null;
+      this.navPollInterval = null;
+      this.loadMoreRetryInterval = null;
+      this.activeLoadingImg = null;
+      this.navDirection = 1;
+      this.isTransitioning = false;
+      this.isLoading = false;
+      this.lastNavTime = 0;
+      this.transitionTimeout = null;
+      this.spinnerTimeout = null;
+      this.waitingTimeout = null;
+    }
     updatePosts(newPosts) {
       if (!newPosts || newPosts.length === 0) return;
       const activePost = this.posts[this.currentPostIndex];
@@ -854,19 +918,19 @@
         }
       }
       this.posts = newPosts;
-      if (this._pendingNavigation && this._pendingNavigation.type === "post") {
-        const nextTargetIdx = this._pendingNavigation.fromPostIndex + 1;
+      if (this.pendingNavigation && this.pendingNavigation.type === "post") {
+        const nextTargetIdx = this.pendingNavigation.fromPostIndex + 1;
         if (this.posts.length > nextTargetIdx) {
-          this._pendingNavigation = null;
-          if (this._waitingTimeout) {
-            clearTimeout(this._waitingTimeout);
-            this._waitingTimeout = null;
+          this.pendingNavigation = null;
+          if (this.waitingTimeout) {
+            clearTimeout(this.waitingTimeout);
+            this.waitingTimeout = null;
           }
-          if (this._loadMoreRetryInterval) {
-            clearInterval(this._loadMoreRetryInterval);
-            this._loadMoreRetryInterval = null;
+          if (this.loadMoreRetryInterval) {
+            clearInterval(this.loadMoreRetryInterval);
+            this.loadMoreRetryInterval = null;
           }
-          this.dom.spinner.classList.remove("immerse-spinner-visible");
+          this.overlay.dom.spinner.classList.remove("immerse-spinner-visible");
           this.goToPost(nextTargetIdx, 0);
           return;
         }
@@ -877,11 +941,6 @@
         this._updateCarouselControls(curr);
       }
     }
-    /**
-     * Synchronizes and accumulates any newly mounted slides for the given post.
-     *
-     * @param {Object} post
-     */
     _syncPostSlides(post) {
       if (!post || !post.tile) return;
       if (!isFeedContext(post.tile)) {
@@ -908,6 +967,760 @@
       }
       const estCount = getEstimatedSlideCount(post.tile);
       post.totalSlides = Math.max(post.totalSlides || 0, estCount, post.slides.length);
+    }
+    loadCurrent() {
+      const post = this.posts[this.currentPostIndex];
+      if (!post || !post.slides || post.slides.length === 0) return;
+      this.completeTransitionImmediately();
+      if (this.spinnerTimeout) {
+        clearTimeout(this.spinnerTimeout);
+        this.spinnerTimeout = null;
+      }
+      this._syncPostSlides(post);
+      this.currentSlideIndex = Math.max(0, Math.min(this.currentSlideIndex, post.slides.length - 1));
+      const slide = post.slides[this.currentSlideIndex];
+      if (this.currentPostIndex >= this.posts.length - 1 && this.overlay.onLoadMore) {
+        this.overlay.onLoadMore();
+      }
+      this.overlay.zoom.resetZoomState();
+      this._updateHeaderCounter();
+      this._updateCarouselControls(post);
+      if (this.overlay.dom.img.src === slide.url && this.overlay.dom.img.style.opacity === "1") {
+        this._preloadAdjacent();
+        return;
+      }
+      const targetPostIndex = this.currentPostIndex;
+      const targetSlideIndex = this.currentSlideIndex;
+      this.isLoading = true;
+      this.spinnerTimeout = setTimeout(() => {
+        if (this.isLoading && this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+          this.overlay.dom.spinner.classList.add("immerse-spinner-visible");
+          if (this.overlay.options.showResolutionBadge) {
+            this.overlay._updateBadgeText("Just a moment...");
+          }
+        }
+      }, 80);
+      if (this.activeLoadingImg) {
+        this.activeLoadingImg.onload = null;
+        this.activeLoadingImg.onerror = null;
+        this.activeLoadingImg = null;
+      }
+      const tempImg = new Image();
+      this.activeLoadingImg = tempImg;
+      const onReady = async () => {
+        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
+        if (this.spinnerTimeout) {
+          clearTimeout(this.spinnerTimeout);
+          this.spinnerTimeout = null;
+        }
+        this.isLoading = false;
+        this.activeLoadingImg = null;
+        this.overlay.dom.spinner.classList.remove("immerse-spinner-visible");
+        if (tempImg.decode) {
+          await tempImg.decode().catch(() => {
+          });
+        }
+        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
+        const dom = this.overlay.dom;
+        const prevUrl = dom.img.src && dom.img.style.opacity !== "0" && dom.img.style.display !== "none" ? dom.img.src : null;
+        const hasPrev = !!prevUrl;
+        const dir = this.navDirection || 1;
+        const isFlat = this.overlay.options.transitionStyle === "flat" || this.overlay.options.transitionStyle === "slide";
+        if (hasPrev) {
+          this.isTransitioning = true;
+          dom.imgPrev.src = prevUrl;
+          dom.imgPrev.style.display = "block";
+          dom.imgPrev.style.transition = "none";
+          dom.imgPrev.style.transform = "translate3d(0, 0, 0)";
+          dom.imgPrev.style.filter = "none";
+          dom.imgPrev.style.opacity = "1";
+          dom.imgPrev.style.zIndex = "1";
+          dom.img.src = slide.url;
+          const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
+          const slideOffset = dir * viewWidth;
+          let incomingStartTransform = "";
+          let outgoingEndTransform = "";
+          let outgoingEndOpacity = "0";
+          let outgoingFilter = "none";
+          let incomingShadow = "none";
+          let easing = "";
+          let duration = "";
+          if (isFlat) {
+            incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
+            outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0)`;
+            outgoingEndOpacity = "1";
+            outgoingFilter = "none";
+            incomingShadow = "none";
+            easing = "cubic-bezier(0.22, 1, 0.36, 1)";
+            duration = "0.44s";
+          } else {
+            incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
+            outgoingEndTransform = `translate3d(${-dir * Math.round(viewWidth * 0.14)}px, 0, 0) scale(0.70)`;
+            outgoingEndOpacity = "0";
+            outgoingFilter = "brightness(0.38) blur(1.5px)";
+            incomingShadow = dir > 0 ? "-36px 0 90px rgba(0, 0, 0, 0.92), -10px 0 28px rgba(0, 0, 0, 0.75)" : "36px 0 90px rgba(0, 0, 0, 0.92), 10px 0 28px rgba(0, 0, 0, 0.75)";
+            easing = "cubic-bezier(0.16, 1, 0.28, 1)";
+            duration = "0.54s";
+          }
+          dom.img.style.transition = "none";
+          dom.img.style.transform = incomingStartTransform;
+          dom.img.style.boxShadow = incomingShadow;
+          dom.img.style.opacity = "1";
+          dom.img.style.zIndex = "2";
+          void dom.img.offsetWidth;
+          requestAnimationFrame(() => {
+            dom.img.style.transition = `transform ${duration} ${easing}`;
+            dom.imgPrev.style.transition = isFlat ? `transform ${duration} ${easing}` : `transform ${duration} ${easing}, opacity ${duration} ${easing}, filter ${duration} ${easing}`;
+            dom.img.style.transform = "translate3d(0, 0, 0)";
+            dom.imgPrev.style.transform = outgoingEndTransform;
+            dom.imgPrev.style.opacity = outgoingEndOpacity;
+            dom.imgPrev.style.filter = outgoingFilter;
+          });
+          this.transitionTimeout = setTimeout(() => {
+            if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
+              dom.imgPrev.style.display = "none";
+              dom.imgPrev.style.transform = "none";
+              dom.imgPrev.style.opacity = "0";
+              dom.imgPrev.style.filter = "none";
+              dom.img.style.boxShadow = "none";
+              dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
+              this.isTransitioning = false;
+            }
+          }, isFlat ? 470 : 570);
+        } else {
+          dom.img.src = slide.url;
+          dom.img.style.transition = "opacity 0.32s var(--immerse-smooth)";
+          dom.img.style.transform = "translate3d(0, 0, 0)";
+          dom.img.style.boxShadow = "none";
+          requestAnimationFrame(() => {
+            dom.img.style.opacity = "1";
+          });
+        }
+        const w = tempImg.naturalWidth;
+        const h = tempImg.naturalHeight;
+        this.overlay._updateBadgeText(`${w} \xD7 ${h} \u2022 Highest Quality`);
+        this._preloadAdjacent();
+      };
+      tempImg.onload = onReady;
+      tempImg.onerror = () => {
+        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
+        if (this.spinnerTimeout) clearTimeout(this.spinnerTimeout);
+        this.isLoading = false;
+        this.isTransitioning = false;
+        this.overlay.dom.spinner.classList.remove("immerse-spinner-visible");
+        this.overlay.dom.img.src = slide.url;
+        this.overlay.dom.img.style.opacity = "1";
+        this.overlay.dom.imgPrev.style.opacity = "0";
+        this.overlay.dom.imgPrev.style.display = "none";
+        this.overlay._updateBadgeText(" No Resolution Info");
+      };
+      tempImg.src = slide.url;
+    }
+    _updateHeaderCounter() {
+      const post = this.posts[this.currentPostIndex];
+      const isFeed = isFeedContext(post?.tile);
+      if (isFeed) {
+        this.overlay.dom.counter.style.display = "none";
+      } else {
+        this.overlay.dom.counter.style.display = "inline-flex";
+        const currentPostNum = this.currentPostIndex + 1;
+        this.overlay._updateCounterText(`Photo ${currentPostNum}`);
+      }
+      if (this.overlay.dom?.viewPostBtn) {
+        const url = this.getCurrentPostUrl();
+        this.overlay.dom.viewPostBtn.style.display = url ? "inline-flex" : "none";
+      }
+      this.overlay.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
+      this.overlay.dom.nextPostBtn.disabled = false;
+    }
+    getCurrentPostUrl() {
+      const post = this.posts[this.currentPostIndex];
+      if (!post) return null;
+      const tile = post.tile;
+      if (tile) {
+        const link = tile.matches && tile.matches('a[href*="/p/"], a[href*="/reel/"]') ? tile.getAttribute("href") : (tile.querySelector ? tile.querySelector('a[href*="/p/"], a[href*="/reel/"]')?.getAttribute("href") : null) || (tile.closest ? tile.closest('a[href*="/p/"], a[href*="/reel/"]')?.getAttribute("href") : null);
+        if (link) {
+          if (link.startsWith("http")) return link;
+          return `https://www.instagram.com${link.startsWith("/") ? "" : "/"}${link}`;
+        }
+      }
+      if (post.id && typeof post.id === "string" && post.id.startsWith("post_")) {
+        const code = post.id.slice(5);
+        return `https://www.instagram.com/p/${code}/`;
+      }
+      return null;
+    }
+    openPostOnInstagram() {
+      const url = this.getCurrentPostUrl();
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    }
+    _updateCarouselControls(post) {
+      const isFeed = isFeedContext(post?.tile);
+      if (!isFeed || !post || !post.isCarousel && post.slides.length <= 1) {
+        this.overlay.dom.carouselCtrl.style.display = "none";
+        return;
+      }
+      this.overlay.dom.carouselCtrl.style.display = "flex";
+      const totalSlides = Math.max(post.totalSlides || 0, post.slides.length);
+      const currentSlideNum = this.currentSlideIndex + 1;
+      this.overlay.dom.carouselLabel.textContent = `Slide ${currentSlideNum} of ${totalSlides}`;
+      this.overlay.dom.prevSlideBtn.disabled = this.currentSlideIndex === 0;
+      const hasNativeNext = !!findNativeCarouselNextButton(post.tile);
+      const hasMore = this.currentSlideIndex < totalSlides - 1 || hasNativeNext;
+      this.overlay.dom.nextSlideBtn.disabled = !hasMore;
+      this.overlay.dom.dotsContainer.innerHTML = "";
+      const dotsCount = Math.max(totalSlides, post.slides.length);
+      for (let i = 0; i < dotsCount; i++) {
+        const dot = createElement("div", {
+          className: `immerse-dot ${i === this.currentSlideIndex ? "immerse-dot-active" : ""}`,
+          attributes: { title: `Go to slide ${i + 1}` },
+          events: {
+            click: (e) => {
+              e.stopPropagation();
+              this.goToSlide(i);
+            }
+          }
+        });
+        this.overlay.dom.dotsContainer.appendChild(dot);
+      }
+    }
+    _preloadAdjacent() {
+      if (!this.posts || this.posts.length === 0) return;
+      const targetIndices = [
+        this.currentPostIndex - 2,
+        this.currentPostIndex - 1,
+        this.currentPostIndex + 1,
+        this.currentPostIndex + 2
+      ];
+      for (const idx of targetIndices) {
+        if (idx >= 0 && idx < this.posts.length) {
+          const p = this.posts[idx];
+          if (p?.slides?.[0]?.url) {
+            const pre = new Image();
+            pre.src = p.slides[0].url;
+          }
+        }
+      }
+      const post = this.posts[this.currentPostIndex];
+      if (post && post.slides && isFeedContext(post.tile)) {
+        if (post.slides[this.currentSlideIndex - 1]?.url) {
+          const pre = new Image();
+          pre.src = post.slides[this.currentSlideIndex - 1].url;
+        }
+        if (post.slides[this.currentSlideIndex + 1]?.url) {
+          const pre = new Image();
+          pre.src = post.slides[this.currentSlideIndex + 1].url;
+        }
+      }
+    }
+    nextPost() {
+      this.lastNavTime = Date.now();
+      this.navDirection = 1;
+      this.overlay.zoom.resetZoomState();
+      if (this.currentPostIndex < this.posts.length - 1) {
+        this.goToPost(this.currentPostIndex + 1, 0);
+      } else {
+        this.pendingNavigation = {
+          type: "post",
+          direction: 1,
+          fromPostIndex: this.currentPostIndex
+        };
+        this.overlay.dom.spinner.classList.add("immerse-spinner-visible");
+        if (this.overlay.onLoadMore) {
+          this.overlay.onLoadMore();
+          if (this.loadMoreRetryInterval) clearInterval(this.loadMoreRetryInterval);
+          let retries = 0;
+          this.loadMoreRetryInterval = setInterval(() => {
+            retries++;
+            if (this.pendingNavigation?.type === "post") {
+              if (this.posts.length > this.pendingNavigation.fromPostIndex + 1) {
+                const target = this.pendingNavigation.fromPostIndex + 1;
+                this.pendingNavigation = null;
+                clearInterval(this.loadMoreRetryInterval);
+                this.loadMoreRetryInterval = null;
+                if (this.waitingTimeout) {
+                  clearTimeout(this.waitingTimeout);
+                  this.waitingTimeout = null;
+                }
+                this.overlay.dom.spinner.classList.remove("immerse-spinner-visible");
+                this.goToPost(target, 0);
+              } else if (retries < 6) {
+                this.overlay.onLoadMore();
+              } else {
+                clearInterval(this.loadMoreRetryInterval);
+                this.loadMoreRetryInterval = null;
+              }
+            } else {
+              clearInterval(this.loadMoreRetryInterval);
+              this.loadMoreRetryInterval = null;
+            }
+          }, 750);
+        }
+        if (this.waitingTimeout) clearTimeout(this.waitingTimeout);
+        this.waitingTimeout = setTimeout(() => {
+          if (this.pendingNavigation?.type === "post") {
+            this.pendingNavigation = null;
+            this.overlay.dom.spinner.classList.remove("immerse-spinner-visible");
+          }
+          if (this.loadMoreRetryInterval) {
+            clearInterval(this.loadMoreRetryInterval);
+            this.loadMoreRetryInterval = null;
+          }
+        }, 7e3);
+      }
+    }
+    prevPost() {
+      this.lastNavTime = Date.now();
+      this.navDirection = -1;
+      this.overlay.zoom.resetZoomState();
+      this.pendingNavigation = null;
+      if (this.loadMoreRetryInterval) {
+        clearInterval(this.loadMoreRetryInterval);
+        this.loadMoreRetryInterval = null;
+      }
+      if (this.currentPostIndex > 0) {
+        this.goToPost(this.currentPostIndex - 1, 0);
+      }
+    }
+    goToPost(postIndex, slideIndex = 0) {
+      this.lastNavTime = Date.now();
+      this.navDirection = postIndex >= this.currentPostIndex ? 1 : -1;
+      this.overlay.zoom.resetZoomState();
+      this.currentPostIndex = postIndex;
+      this.currentSlideIndex = slideIndex;
+      this.loadCurrent();
+    }
+    nextSlide() {
+      const post = this.posts[this.currentPostIndex];
+      if (!post || !isFeedContext(post.tile)) return;
+      this.lastNavTime = Date.now();
+      this.navDirection = 1;
+      this.overlay.zoom.resetZoomState();
+      if (this.currentSlideIndex < post.slides.length - 1) {
+        this.goToSlide(this.currentSlideIndex + 1);
+        this._prefetchNextNativeSlide(post);
+        return;
+      }
+      const targetSlide = this.currentSlideIndex + 1;
+      this.pendingNavigation = {
+        type: "slide",
+        direction: 1,
+        targetSlideIndex: targetSlide
+      };
+      this.overlay.dom.spinner.classList.add("immerse-spinner-visible");
+      this._advanceNativeCarouselAndGo(post, targetSlide);
+    }
+    prevSlide() {
+      const post = this.posts[this.currentPostIndex];
+      if (!post || !isFeedContext(post.tile)) return;
+      this.lastNavTime = Date.now();
+      this.navDirection = -1;
+      this.overlay.zoom.resetZoomState();
+      this.pendingNavigation = null;
+      if (this.navPollInterval) {
+        clearInterval(this.navPollInterval);
+        this.navPollInterval = null;
+      }
+      if (this.currentSlideIndex > 0) {
+        this.goToSlide(this.currentSlideIndex - 1);
+      }
+    }
+    goToSlide(slideIndex) {
+      const post = this.posts[this.currentPostIndex];
+      if (!post || !isFeedContext(post.tile)) return;
+      this.lastNavTime = Date.now();
+      this.navDirection = slideIndex >= this.currentSlideIndex ? 1 : -1;
+      this.overlay.zoom.resetZoomState();
+      if (slideIndex < post.slides.length) {
+        this.currentSlideIndex = slideIndex;
+        this.loadCurrent();
+      } else {
+        this._advanceNativeCarouselAndGo(post, slideIndex);
+      }
+    }
+    _advanceNativeCarouselAndGo(post, targetSlideIndex) {
+      const nativeNext = findNativeCarouselNextButton(post.tile);
+      if (!nativeNext) {
+        if (this.pendingNavigation?.type === "slide") {
+          this.pendingNavigation = null;
+          this.overlay.dom.spinner.classList.remove("immerse-spinner-visible");
+        }
+        return;
+      }
+      nativeNext.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      nativeNext.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      if (this.navPollInterval) clearInterval(this.navPollInterval);
+      let attempts = 0;
+      this.navPollInterval = setInterval(() => {
+        attempts++;
+        this._syncPostSlides(post);
+        if (post.slides.length > targetSlideIndex) {
+          clearInterval(this.navPollInterval);
+          this.navPollInterval = null;
+          this.pendingNavigation = null;
+          this.overlay.dom.spinner.classList.remove("immerse-spinner-visible");
+          this.goToSlide(targetSlideIndex);
+        } else if (attempts >= 45) {
+          clearInterval(this.navPollInterval);
+          this.navPollInterval = null;
+          if (this.pendingNavigation?.type === "slide") {
+            this.pendingNavigation = null;
+            this.overlay.dom.spinner.classList.remove("immerse-spinner-visible");
+          }
+          this._updateCarouselControls(post);
+        }
+      }, 60);
+    }
+    _prefetchNextNativeSlide(post) {
+      const nativeNext = findNativeCarouselNextButton(post.tile);
+      if (!nativeNext) return;
+      if (this.currentSlideIndex >= post.slides.length - 2) {
+        nativeNext.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        nativeNext.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        setTimeout(() => {
+          this._syncPostSlides(post);
+          this._updateCarouselControls(post);
+        }, 80);
+      }
+    }
+    completeTransitionImmediately() {
+      if (this.transitionTimeout) {
+        clearTimeout(this.transitionTimeout);
+        this.transitionTimeout = null;
+      }
+      const dom = this.overlay.dom;
+      if (dom?.imgPrev) {
+        dom.imgPrev.style.transition = "none";
+        dom.imgPrev.style.display = "none";
+        dom.imgPrev.style.transform = "none";
+        dom.imgPrev.style.filter = "none";
+        dom.imgPrev.style.opacity = "0";
+      }
+      if (dom?.img) {
+        dom.img.style.transition = "none";
+        dom.img.style.transform = "translate3d(0, 0, 0)";
+        dom.img.style.boxShadow = "none";
+        dom.img.style.opacity = "1";
+      }
+      this.isTransitioning = false;
+    }
+  };
+
+  // src/modules/viewer/dom.js
+  function createOverlayDom(overlay) {
+    const root = createElement("div", {
+      className: "immerse-overlay-root",
+      attributes: { "aria-modal": "true", role: "dialog" }
+    });
+    const backdrop = createElement("div", {
+      className: "immerse-backdrop",
+      events: { click: (e) => {
+        if (e.target === backdrop || e.target === stage) overlay.close();
+      } }
+    });
+    const header = createElement("div", { className: "immerse-header" });
+    const badgeText = createElement("span", {
+      className: "immerse-badge-text",
+      textContent: "Immersive View"
+    });
+    const showBadge = !!overlay.options.showResolutionBadge;
+    const badge = createElement("div", {
+      className: "immerse-badge",
+      style: { display: showBadge ? "inline-flex" : "none" }
+    });
+    badge.append(badgeText);
+    const counterText = createElement("span", {
+      className: "immerse-counter-text",
+      textContent: "Photo 1"
+    });
+    const counter = createElement("div", { className: "immerse-counter" });
+    counter.append(counterText);
+    const headerLeft = createElement("div", { className: "immerse-header-left" });
+    headerLeft.append(badge, counter);
+    const controls = createElement("div", { className: "immerse-controls" });
+    const viewPostBtn = createElement("button", {
+      className: "immerse-btn immerse-btn-view-post",
+      innerHTML: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+      attributes: { title: "View Post on Instagram (V)", "aria-label": "View Post on Instagram" },
+      events: { click: () => overlay.nav.openPostOnInstagram() }
+    });
+    const zoomResetBtn = createElement("button", {
+      className: "immerse-btn immerse-btn-zoom",
+      textContent: "100%",
+      attributes: { title: "Reset zoom (0)", "aria-label": "Reset zoom" },
+      events: { click: () => overlay.zoom.resetTransform() }
+    });
+    const fullscreenBtn = createElement("button", {
+      className: "immerse-btn immerse-btn-fullscreen",
+      innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
+      attributes: { title: "Toggle Fullscreen (F)", "aria-label": "Toggle Fullscreen" },
+      events: { click: () => overlay.events.toggleNativeFullscreen() }
+    });
+    const closeBtn = createElement("button", {
+      className: "immerse-btn immerse-btn-close",
+      innerHTML: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+      attributes: { title: "Close (Esc)", "aria-label": "Close" },
+      events: { click: () => overlay.close() }
+    });
+    controls.append(viewPostBtn, zoomResetBtn, fullscreenBtn, closeBtn);
+    header.append(headerLeft, controls);
+    const stage = createElement("div", {
+      className: "immerse-stage",
+      events: {
+        wheel: overlay.zoom.handleWheel,
+        mousedown: overlay.zoom.handleMouseDown,
+        dblclick: overlay.zoom.handleDblClick
+      }
+    });
+    const prevPostBtn = createElement("button", {
+      className: "immerse-nav-btn immerse-nav-prev",
+      innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
+      attributes: { title: "Previous Post (Left Arrow)", "aria-label": "Previous Post" },
+      events: {
+        click: (e) => {
+          e.stopPropagation();
+          overlay.nav.prevPost();
+        },
+        dblclick: (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }
+    });
+    const nextPostBtn = createElement("button", {
+      className: "immerse-nav-btn immerse-nav-next",
+      innerHTML: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
+      attributes: { title: "Next Post (Right Arrow)", "aria-label": "Next Post" },
+      events: {
+        click: (e) => {
+          e.stopPropagation();
+          overlay.nav.nextPost();
+        },
+        dblclick: (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }
+    });
+    const imgWrapper = createElement("div", { className: "immerse-image-wrapper" });
+    const imgPrev = createElement("img", {
+      className: "immerse-image immerse-image-prev",
+      attributes: { draggable: "false" },
+      style: { opacity: "0", display: "none", pointerEvents: "none" }
+    });
+    const img = createElement("img", {
+      className: "immerse-image immerse-image-curr",
+      attributes: { draggable: "false" },
+      style: { opacity: "0", pointerEvents: "none" }
+    });
+    const shield = createElement("div", {
+      className: "immerse-shield",
+      attributes: { "aria-hidden": "true" }
+    });
+    const spinner = createElement("div", {
+      className: "immerse-spinner",
+      innerHTML: '<div class="immerse-spinner-ring"></div>'
+    });
+    imgWrapper.append(imgPrev, img, shield, spinner);
+    const carouselCtrl = createElement("div", {
+      className: "immerse-carousel-controller",
+      style: { display: "none" }
+    });
+    const prevSlideBtn = createElement("button", {
+      className: "immerse-carousel-btn",
+      innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>',
+      attributes: { title: "Previous Slide (Up Arrow)", "aria-label": "Previous Slide" },
+      events: {
+        click: (e) => {
+          e.stopPropagation();
+          overlay.nav.prevSlide();
+        },
+        dblclick: (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }
+    });
+    const dotsContainer = createElement("div", { className: "immerse-dots" });
+    const nextSlideBtn = createElement("button", {
+      className: "immerse-carousel-btn",
+      innerHTML: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
+      attributes: { title: "Next Slide (Down Arrow)", "aria-label": "Next Slide" },
+      events: {
+        click: (e) => {
+          e.stopPropagation();
+          overlay.nav.nextSlide();
+        },
+        dblclick: (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }
+    });
+    const carouselLabel = createElement("span", {
+      className: "immerse-carousel-label",
+      textContent: "Slide 1/1"
+    });
+    carouselCtrl.append(prevSlideBtn, dotsContainer, carouselLabel, nextSlideBtn);
+    stage.append(prevPostBtn, imgWrapper, nextPostBtn, carouselCtrl);
+    root.append(backdrop, header, stage);
+    root.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    root.addEventListener("dragstart", (e) => e.preventDefault());
+    root.addEventListener("selectstart", (e) => e.preventDefault());
+    return {
+      root,
+      backdrop,
+      header,
+      badge,
+      badgeText,
+      counter,
+      counterText,
+      viewPostBtn,
+      zoomResetBtn,
+      fullscreenBtn,
+      closeBtn,
+      stage,
+      prevPostBtn,
+      nextPostBtn,
+      imgWrapper,
+      imgPrev,
+      img,
+      shield,
+      spinner,
+      carouselCtrl,
+      prevSlideBtn,
+      nextSlideBtn,
+      dotsContainer,
+      carouselLabel
+    };
+  }
+
+  // src/modules/viewer-overlay.js
+  var ViewerOverlay = class {
+    constructor(options = {}) {
+      this.options = options;
+      this.onLoadMore = options.onLoadMore || null;
+      this.onClose = options.onClose || null;
+      this.isOpen = false;
+      this.nav = new NavigationController(this);
+      this.zoom = new ZoomPanController(this);
+      this.events = new EventsController(this);
+      this._badgeTextTimeout = null;
+      this._counterTextTimeout = null;
+      this.dom = null;
+    }
+    /**
+     * Builds the DOM elements for the overlay with modern frosted glass styling.
+     */
+    _ensureDom() {
+      if (this.dom) return;
+      this.dom = createOverlayDom(this);
+    }
+    /**
+     * Opens the lightbox overlay with the complete gallery of posts.
+     *
+     * @param {Array<Object>} posts Array of post objects
+     * @param {number} [startPostIndex=0]
+     * @param {number} [startSlideIndex=0]
+     */
+    open(posts, startPostIndex = 0, startSlideIndex = 0) {
+      if (!posts || posts.length === 0) return;
+      this._ensureDom();
+      this.nav.posts = posts;
+      this.nav.currentPostIndex = Math.max(0, Math.min(startPostIndex, posts.length - 1));
+      this.nav.currentSlideIndex = startSlideIndex;
+      if (this.dom.img) {
+        this.dom.img.src = "";
+        this.dom.img.style.opacity = "0";
+        this.dom.img.style.transform = "translate3d(0, 0, 0)";
+      }
+      if (this.dom.imgPrev) {
+        this.dom.imgPrev.src = "";
+        this.dom.imgPrev.style.display = "none";
+        this.dom.imgPrev.style.opacity = "0";
+      }
+      if (!document.body.contains(this.dom.root)) {
+        document.body.appendChild(this.dom.root);
+      }
+      requestAnimationFrame(() => {
+        this.dom.root.classList.add("immerse-active");
+        this.events.setup();
+      });
+      this.isOpen = true;
+      this.nav.loadCurrent();
+    }
+    /**
+     * Closes the lightbox overlay.
+     */
+    close() {
+      if (!this.isOpen || !this.dom) return;
+      this.dom.root.classList.remove("immerse-active");
+      this.dom.root.classList.remove("immerse-controls-hidden");
+      this.dom.root.classList.remove("immerse-cursor-hidden");
+      this.events.cleanup();
+      if (this.nav.spinnerTimeout) {
+        clearTimeout(this.nav.spinnerTimeout);
+        this.nav.spinnerTimeout = null;
+      }
+      if (this._badgeTextTimeout) {
+        clearTimeout(this._badgeTextTimeout);
+        this._badgeTextTimeout = null;
+      }
+      if (this._counterTextTimeout) {
+        clearTimeout(this._counterTextTimeout);
+        this._counterTextTimeout = null;
+      }
+      if (this.nav.waitingTimeout) {
+        clearTimeout(this.nav.waitingTimeout);
+        this.nav.waitingTimeout = null;
+      }
+      if (this.nav.navPollInterval) {
+        clearInterval(this.nav.navPollInterval);
+        this.nav.navPollInterval = null;
+      }
+      if (this.nav.loadMoreRetryInterval) {
+        clearInterval(this.nav.loadMoreRetryInterval);
+        this.nav.loadMoreRetryInterval = null;
+      }
+      this.nav.pendingNavigation = null;
+      this.nav.activeLoadingImg = null;
+      this.isOpen = false;
+      this.nav.completeTransitionImmediately();
+      this.zoom.resetTransform();
+      if (this.dom?.img) {
+        this.dom.img.src = "";
+        this.dom.img.style.opacity = "0";
+      }
+      if (this.dom?.imgPrev) {
+        this.dom.imgPrev.src = "";
+        this.dom.imgPrev.style.display = "none";
+        this.dom.imgPrev.style.opacity = "0";
+      }
+      if (typeof this.onClose === "function") {
+        try {
+          this.onClose();
+        } catch (err) {
+          console.warn("[Immerse] Error in onClose handler:", err);
+        }
+      }
+      setTimeout(() => {
+        if (!this.isOpen && this.dom?.root.parentElement) {
+          this.dom.root.parentElement.removeChild(this.dom.root);
+        }
+      }, 250);
+    }
+    /**
+     * Updates posts dynamically when Instagram loads more items in the background.
+     *
+     * @param {Array<Object>} newPosts
+     */
+    updatePosts(newPosts) {
+      this.nav.updatePosts(newPosts);
     }
     /**
      * Updates overlay options dynamically when settings change.
@@ -955,781 +1768,8 @@
         }
       }, 120);
     }
-    /**
-     * Loads the current post and current slide into view with seamless GPU-accelerated crossfading.
-     */
-    loadCurrent() {
-      const post = this.posts[this.currentPostIndex];
-      if (!post || !post.slides || post.slides.length === 0) return;
-      this._completeTransitionImmediately();
-      if (this._spinnerTimeout) {
-        clearTimeout(this._spinnerTimeout);
-        this._spinnerTimeout = null;
-      }
-      this._syncPostSlides(post);
-      this.currentSlideIndex = Math.max(0, Math.min(this.currentSlideIndex, post.slides.length - 1));
-      const slide = post.slides[this.currentSlideIndex];
-      if (this.currentPostIndex >= this.posts.length - 1 && this.onLoadMore) {
-        this.onLoadMore();
-      }
-      this.resetZoomState();
-      this._updateHeaderCounter();
-      this._updateCarouselControls(post);
-      if (this.dom.img.src === slide.url && this.dom.img.style.opacity === "1") {
-        this._preloadAdjacent();
-        return;
-      }
-      const targetPostIndex = this.currentPostIndex;
-      const targetSlideIndex = this.currentSlideIndex;
-      this._isLoading = true;
-      this._spinnerTimeout = setTimeout(() => {
-        if (this._isLoading && this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
-          this.dom.spinner.classList.add("immerse-spinner-visible");
-          if (this.options.showResolutionBadge) {
-            this._updateBadgeText("Just a moment...");
-          }
-        }
-      }, 80);
-      if (this._activeLoadingImg) {
-        this._activeLoadingImg.onload = null;
-        this._activeLoadingImg.onerror = null;
-        this._activeLoadingImg = null;
-      }
-      const tempImg = new Image();
-      this._activeLoadingImg = tempImg;
-      const onReady = async () => {
-        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
-        if (this._spinnerTimeout) {
-          clearTimeout(this._spinnerTimeout);
-          this._spinnerTimeout = null;
-        }
-        this._isLoading = false;
-        this._activeLoadingImg = null;
-        this.dom.spinner.classList.remove("immerse-spinner-visible");
-        if (tempImg.decode) {
-          await tempImg.decode().catch(() => {
-          });
-        }
-        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
-        const prevUrl = this.dom.img.src && this.dom.img.style.opacity !== "0" && this.dom.img.style.display !== "none" ? this.dom.img.src : null;
-        const hasPrev = !!prevUrl;
-        const dir = this._navDirection || 1;
-        const isFlat = this.options.transitionStyle === "flat" || this.options.transitionStyle === "slide";
-        if (hasPrev) {
-          this._isTransitioning = true;
-          this.dom.imgPrev.src = prevUrl;
-          this.dom.imgPrev.style.display = "block";
-          this.dom.imgPrev.style.transition = "none";
-          this.dom.imgPrev.style.transform = "translate3d(0, 0, 0)";
-          this.dom.imgPrev.style.filter = "none";
-          this.dom.imgPrev.style.opacity = "1";
-          this.dom.imgPrev.style.zIndex = "1";
-          this.dom.img.src = slide.url;
-          const viewWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, 1920);
-          const slideOffset = dir * viewWidth;
-          let incomingStartTransform = "";
-          let outgoingEndTransform = "";
-          let outgoingEndOpacity = "0";
-          let outgoingFilter = "none";
-          let incomingShadow = "none";
-          let easing = "";
-          let duration = "";
-          if (isFlat) {
-            incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
-            outgoingEndTransform = `translate3d(${-slideOffset}px, 0, 0)`;
-            outgoingEndOpacity = "1";
-            outgoingFilter = "none";
-            incomingShadow = "none";
-            easing = "cubic-bezier(0.22, 1, 0.36, 1)";
-            duration = "0.44s";
-          } else {
-            incomingStartTransform = `translate3d(${slideOffset}px, 0, 0)`;
-            outgoingEndTransform = `translate3d(${-dir * Math.round(viewWidth * 0.14)}px, 0, 0) scale(0.70)`;
-            outgoingEndOpacity = "0";
-            outgoingFilter = "brightness(0.38) blur(1.5px)";
-            incomingShadow = dir > 0 ? "-36px 0 90px rgba(0, 0, 0, 0.92), -10px 0 28px rgba(0, 0, 0, 0.75)" : "36px 0 90px rgba(0, 0, 0, 0.92), 10px 0 28px rgba(0, 0, 0, 0.75)";
-            easing = "cubic-bezier(0.16, 1, 0.28, 1)";
-            duration = "0.54s";
-          }
-          this.dom.img.style.transition = "none";
-          this.dom.img.style.transform = incomingStartTransform;
-          this.dom.img.style.boxShadow = incomingShadow;
-          this.dom.img.style.opacity = "1";
-          this.dom.img.style.zIndex = "2";
-          void this.dom.img.offsetWidth;
-          requestAnimationFrame(() => {
-            this.dom.img.style.transition = `transform ${duration} ${easing}`;
-            this.dom.imgPrev.style.transition = isFlat ? `transform ${duration} ${easing}` : `transform ${duration} ${easing}, opacity ${duration} ${easing}, filter ${duration} ${easing}`;
-            this.dom.img.style.transform = "translate3d(0, 0, 0)";
-            this.dom.imgPrev.style.transform = outgoingEndTransform;
-            this.dom.imgPrev.style.opacity = outgoingEndOpacity;
-            this.dom.imgPrev.style.filter = outgoingFilter;
-          });
-          this._transitionTimeout = setTimeout(() => {
-            if (this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
-              this.dom.imgPrev.style.display = "none";
-              this.dom.imgPrev.style.transform = "none";
-              this.dom.imgPrev.style.opacity = "0";
-              this.dom.imgPrev.style.filter = "none";
-              this.dom.img.style.boxShadow = "none";
-              this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
-              this._isTransitioning = false;
-            }
-          }, isFlat ? 470 : 570);
-        } else {
-          this.dom.img.src = slide.url;
-          this.dom.img.style.transition = "opacity 0.32s var(--immerse-smooth)";
-          this.dom.img.style.transform = "translate3d(0, 0, 0)";
-          this.dom.img.style.boxShadow = "none";
-          requestAnimationFrame(() => {
-            this.dom.img.style.opacity = "1";
-          });
-        }
-        const w = tempImg.naturalWidth;
-        const h = tempImg.naturalHeight;
-        this._updateBadgeText(`${w} \xD7 ${h} \u2022 Highest Quality`);
-        this._preloadAdjacent();
-      };
-      tempImg.onload = onReady;
-      tempImg.onerror = () => {
-        if (this.currentPostIndex !== targetPostIndex || this.currentSlideIndex !== targetSlideIndex) return;
-        if (this._spinnerTimeout) clearTimeout(this._spinnerTimeout);
-        this._isLoading = false;
-        this._isTransitioning = false;
-        this.dom.spinner.classList.remove("immerse-spinner-visible");
-        this.dom.img.src = slide.url;
-        this.dom.img.style.opacity = "1";
-        this.dom.imgPrev.style.opacity = "0";
-        this.dom.imgPrev.style.display = "none";
-        this._updateBadgeText(" No Resolution Info");
-      };
-      tempImg.src = slide.url;
-    }
-    _updateHeaderCounter() {
-      const post = this.posts[this.currentPostIndex];
-      const isFeed = isFeedContext(post?.tile);
-      if (isFeed) {
-        this.dom.counter.style.display = "none";
-      } else {
-        this.dom.counter.style.display = "inline-flex";
-        const currentPostNum = this.currentPostIndex + 1;
-        this._updateCounterText(`Photo ${currentPostNum}`);
-      }
-      if (this.dom?.viewPostBtn) {
-        const url = this.getCurrentPostUrl();
-        this.dom.viewPostBtn.style.display = url ? "inline-flex" : "none";
-      }
-      this.dom.prevPostBtn.disabled = this.currentPostIndex === 0;
-      this.dom.nextPostBtn.disabled = false;
-    }
-    /**
-     * Resolves the Instagram permalink URL for the currently active post.
-     *
-     * @returns {string|null}
-     */
-    getCurrentPostUrl() {
-      const post = this.posts[this.currentPostIndex];
-      if (!post) return null;
-      const tile = post.tile;
-      if (tile) {
-        const link = tile.matches && tile.matches('a[href*="/p/"], a[href*="/reel/"]') ? tile.getAttribute("href") : (tile.querySelector ? tile.querySelector('a[href*="/p/"], a[href*="/reel/"]')?.getAttribute("href") : null) || (tile.closest ? tile.closest('a[href*="/p/"], a[href*="/reel/"]')?.getAttribute("href") : null);
-        if (link) {
-          if (link.startsWith("http")) return link;
-          return `https://www.instagram.com${link.startsWith("/") ? "" : "/"}${link}`;
-        }
-      }
-      if (post.id && typeof post.id === "string" && post.id.startsWith("post_")) {
-        const code = post.id.slice(5);
-        return `https://www.instagram.com/p/${code}/`;
-      }
-      return null;
-    }
-    /**
-     * Opens the currently active post's native Instagram permalink in a new browser tab.
-     */
-    openPostOnInstagram() {
-      const url = this.getCurrentPostUrl();
-      if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
-      }
-    }
-    _updateCarouselControls(post) {
-      const isFeed = isFeedContext(post?.tile);
-      if (!isFeed || !post || !post.isCarousel && post.slides.length <= 1) {
-        this.dom.carouselCtrl.style.display = "none";
-        return;
-      }
-      this.dom.carouselCtrl.style.display = "flex";
-      const totalSlides = Math.max(post.totalSlides || 0, post.slides.length);
-      const currentSlideNum = this.currentSlideIndex + 1;
-      this.dom.carouselLabel.textContent = `Slide ${currentSlideNum} of ${totalSlides}`;
-      this.dom.prevSlideBtn.disabled = this.currentSlideIndex === 0;
-      const hasNativeNext = !!findNativeCarouselNextButton(post.tile);
-      const hasMore = this.currentSlideIndex < totalSlides - 1 || hasNativeNext;
-      this.dom.nextSlideBtn.disabled = !hasMore;
-      this.dom.dotsContainer.innerHTML = "";
-      const dotsCount = Math.max(totalSlides, post.slides.length);
-      for (let i = 0; i < dotsCount; i++) {
-        const dot = createElement("div", {
-          className: `immerse-dot ${i === this.currentSlideIndex ? "immerse-dot-active" : ""}`,
-          attributes: { title: `Go to slide ${i + 1}` },
-          events: {
-            click: (e) => {
-              e.stopPropagation();
-              this.goToSlide(i);
-            }
-          }
-        });
-        this.dom.dotsContainer.appendChild(dot);
-      }
-    }
-    _preloadAdjacent() {
-      if (!this.posts || this.posts.length === 0) return;
-      const targetIndices = [
-        this.currentPostIndex - 2,
-        this.currentPostIndex - 1,
-        this.currentPostIndex + 1,
-        this.currentPostIndex + 2
-      ];
-      for (const idx of targetIndices) {
-        if (idx >= 0 && idx < this.posts.length) {
-          const p = this.posts[idx];
-          if (p?.slides?.[0]?.url) {
-            const pre = new Image();
-            pre.src = p.slides[0].url;
-          }
-        }
-      }
-      const post = this.posts[this.currentPostIndex];
-      if (post && post.slides && isFeedContext(post.tile)) {
-        if (post.slides[this.currentSlideIndex - 1]?.url) {
-          const pre = new Image();
-          pre.src = post.slides[this.currentSlideIndex - 1].url;
-        }
-        if (post.slides[this.currentSlideIndex + 1]?.url) {
-          const pre = new Image();
-          pre.src = post.slides[this.currentSlideIndex + 1].url;
-        }
-      }
-    }
-    /* ---------------- Primary Navigation: Grid Posts ---------------- */
-    nextPost() {
-      this._lastNavTime = Date.now();
-      this._navDirection = 1;
-      this.resetZoomState();
-      if (this.currentPostIndex < this.posts.length - 1) {
-        this.goToPost(this.currentPostIndex + 1, 0);
-      } else {
-        this._pendingNavigation = {
-          type: "post",
-          direction: 1,
-          fromPostIndex: this.currentPostIndex
-        };
-        this.dom.spinner.classList.add("immerse-spinner-visible");
-        if (this.onLoadMore) {
-          this.onLoadMore();
-          if (this._loadMoreRetryInterval) clearInterval(this._loadMoreRetryInterval);
-          let retries = 0;
-          this._loadMoreRetryInterval = setInterval(() => {
-            retries++;
-            if (this._pendingNavigation?.type === "post") {
-              if (this.posts.length > this._pendingNavigation.fromPostIndex + 1) {
-                const target = this._pendingNavigation.fromPostIndex + 1;
-                this._pendingNavigation = null;
-                clearInterval(this._loadMoreRetryInterval);
-                this._loadMoreRetryInterval = null;
-                if (this._waitingTimeout) {
-                  clearTimeout(this._waitingTimeout);
-                  this._waitingTimeout = null;
-                }
-                this.dom.spinner.classList.remove("immerse-spinner-visible");
-                this.goToPost(target, 0);
-              } else if (retries < 6) {
-                this.onLoadMore();
-              } else {
-                clearInterval(this._loadMoreRetryInterval);
-                this._loadMoreRetryInterval = null;
-              }
-            } else {
-              clearInterval(this._loadMoreRetryInterval);
-              this._loadMoreRetryInterval = null;
-            }
-          }, 750);
-        }
-        if (this._waitingTimeout) clearTimeout(this._waitingTimeout);
-        this._waitingTimeout = setTimeout(() => {
-          if (this._pendingNavigation?.type === "post") {
-            this._pendingNavigation = null;
-            this.dom.spinner.classList.remove("immerse-spinner-visible");
-          }
-          if (this._loadMoreRetryInterval) {
-            clearInterval(this._loadMoreRetryInterval);
-            this._loadMoreRetryInterval = null;
-          }
-        }, 7e3);
-      }
-    }
-    prevPost() {
-      this._lastNavTime = Date.now();
-      this._navDirection = -1;
-      this.resetZoomState();
-      this._pendingNavigation = null;
-      if (this._loadMoreRetryInterval) {
-        clearInterval(this._loadMoreRetryInterval);
-        this._loadMoreRetryInterval = null;
-      }
-      if (this.currentPostIndex > 0) {
-        this.goToPost(this.currentPostIndex - 1, 0);
-      }
-    }
-    goToPost(postIndex, slideIndex = 0) {
-      this._lastNavTime = Date.now();
-      this._navDirection = postIndex >= this.currentPostIndex ? 1 : -1;
-      this.resetZoomState();
-      this.currentPostIndex = postIndex;
-      this.currentSlideIndex = slideIndex;
-      this.loadCurrent();
-    }
-    /* ---------------- Secondary Navigation: Carousel Slides ---------------- */
-    nextSlide() {
-      const post = this.posts[this.currentPostIndex];
-      if (!post || !isFeedContext(post.tile)) return;
-      this._lastNavTime = Date.now();
-      this._navDirection = 1;
-      this.resetZoomState();
-      if (this.currentSlideIndex < post.slides.length - 1) {
-        this.goToSlide(this.currentSlideIndex + 1);
-        this._prefetchNextNativeSlide(post);
-        return;
-      }
-      const targetSlide = this.currentSlideIndex + 1;
-      this._pendingNavigation = {
-        type: "slide",
-        direction: 1,
-        targetSlideIndex: targetSlide
-      };
-      this.dom.spinner.classList.add("immerse-spinner-visible");
-      this._advanceNativeCarouselAndGo(post, targetSlide);
-    }
-    prevSlide() {
-      const post = this.posts[this.currentPostIndex];
-      if (!post || !isFeedContext(post.tile)) return;
-      this._lastNavTime = Date.now();
-      this._navDirection = -1;
-      this.resetZoomState();
-      this._pendingNavigation = null;
-      if (this._navPollInterval) {
-        clearInterval(this._navPollInterval);
-        this._navPollInterval = null;
-      }
-      if (this.currentSlideIndex > 0) {
-        this.goToSlide(this.currentSlideIndex - 1);
-      }
-    }
-    goToSlide(slideIndex) {
-      const post = this.posts[this.currentPostIndex];
-      if (!post || !isFeedContext(post.tile)) return;
-      this._lastNavTime = Date.now();
-      this._navDirection = slideIndex >= this.currentSlideIndex ? 1 : -1;
-      this.resetZoomState();
-      if (slideIndex < post.slides.length) {
-        this.currentSlideIndex = slideIndex;
-        this.loadCurrent();
-      } else {
-        this._advanceNativeCarouselAndGo(post, slideIndex);
-      }
-    }
-    _advanceNativeCarouselAndGo(post, targetSlideIndex) {
-      const nativeNext = findNativeCarouselNextButton(post.tile);
-      if (!nativeNext) {
-        if (this._pendingNavigation?.type === "slide") {
-          this._pendingNavigation = null;
-          this.dom.spinner.classList.remove("immerse-spinner-visible");
-        }
-        return;
-      }
-      nativeNext.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-      nativeNext.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      if (this._navPollInterval) clearInterval(this._navPollInterval);
-      let attempts = 0;
-      this._navPollInterval = setInterval(() => {
-        attempts++;
-        this._syncPostSlides(post);
-        if (post.slides.length > targetSlideIndex) {
-          clearInterval(this._navPollInterval);
-          this._navPollInterval = null;
-          this._pendingNavigation = null;
-          this.dom.spinner.classList.remove("immerse-spinner-visible");
-          this.goToSlide(targetSlideIndex);
-        } else if (attempts >= 45) {
-          clearInterval(this._navPollInterval);
-          this._navPollInterval = null;
-          if (this._pendingNavigation?.type === "slide") {
-            this._pendingNavigation = null;
-            this.dom.spinner.classList.remove("immerse-spinner-visible");
-          }
-          this._updateCarouselControls(post);
-        }
-      }, 60);
-    }
-    _prefetchNextNativeSlide(post) {
-      const nativeNext = findNativeCarouselNextButton(post.tile);
-      if (!nativeNext) return;
-      if (this.currentSlideIndex >= post.slides.length - 2) {
-        nativeNext.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-        nativeNext.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        setTimeout(() => {
-          this._syncPostSlides(post);
-          this._updateCarouselControls(post);
-        }, 80);
-      }
-    }
-    /**
-     * Instantly settles any running slide transition to prevent intermediate visual tearing or glitches.
-     */
-    _completeTransitionImmediately() {
-      if (this._transitionTimeout) {
-        clearTimeout(this._transitionTimeout);
-        this._transitionTimeout = null;
-      }
-      if (this.dom?.imgPrev) {
-        this.dom.imgPrev.style.transition = "none";
-        this.dom.imgPrev.style.display = "none";
-        this.dom.imgPrev.style.transform = "none";
-        this.dom.imgPrev.style.filter = "none";
-        this.dom.imgPrev.style.opacity = "0";
-      }
-      if (this.dom?.img) {
-        this.dom.img.style.transition = "none";
-        this.dom.img.style.transform = "translate3d(0, 0, 0)";
-        this.dom.img.style.boxShadow = "none";
-        this.dom.img.style.opacity = "1";
-      }
-      this._isTransitioning = false;
-    }
-    /* ---------------- Zoom & Pan Transforms ---------------- */
-    resetZoomState() {
-      if (this._zoomRafId) {
-        cancelAnimationFrame(this._zoomRafId);
-        this._zoomRafId = null;
-      }
-      this.scale = 1;
-      this.panX = 0;
-      this.panY = 0;
-      this._targetScale = 1;
-      this._targetPanX = 0;
-      this._targetPanY = 0;
-      if (this.dom?.zoomResetBtn) {
-        this.dom.zoomResetBtn.textContent = "100%";
-      }
-      if (this.dom?.stage) {
-        this.dom.stage.classList.remove("immerse-can-pan", "immerse-is-panning");
-      }
-    }
-    resetTransform() {
-      this.resetZoomState();
-      this._applyTransform(true);
-    }
-    _applyTransform(smooth = false) {
-      if (!this.dom?.img) return;
-      if (smooth) {
-        this.dom.img.style.transition = "transform 0.22s cubic-bezier(0.2, 0, 0, 1), opacity 0.28s var(--immerse-smooth)";
-      } else {
-        this.dom.img.style.transition = "opacity 0.28s var(--immerse-smooth)";
-      }
-      this.dom.img.style.transform = `translate3d(${this.panX}px, ${this.panY}px, 0) scale(${this.scale})`;
-      this.dom.zoomResetBtn.textContent = `${Math.round(this.scale * 100)}%`;
-      if (this.scale > 1.05) {
-        this.dom.stage.classList.add("immerse-can-pan");
-      } else {
-        this.dom.stage.classList.remove("immerse-can-pan", "immerse-is-panning");
-      }
-    }
-    _handleWheel(e) {
-      if (!this.isOpen) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (this.options.wheelZoom === false) return;
-      let delta = -e.deltaY;
-      if (e.deltaMode === 1) {
-        delta *= 32;
-      } else if (e.deltaMode === 2) {
-        delta *= 300;
-      }
-      delta = Math.max(-140, Math.min(140, delta));
-      const zoomFactor = Math.exp(delta * 2e-3);
-      const newTargetScale = Math.max(this.minScale, Math.min(this.maxScale, this._targetScale * zoomFactor));
-      if (Math.abs(newTargetScale - this._targetScale) < 1e-4) return;
-      const rect = this.dom.stage.getBoundingClientRect();
-      const mouseX = e.clientX - (rect.left + rect.width / 2);
-      const mouseY = e.clientY - (rect.top + rect.height / 2);
-      const ratio = newTargetScale / this._targetScale;
-      let newTargetPanX = mouseX - (mouseX - this._targetPanX) * ratio;
-      let newTargetPanY = mouseY - (mouseY - this._targetPanY) * ratio;
-      if (newTargetScale <= 1) {
-        newTargetPanX = 0;
-        newTargetPanY = 0;
-      }
-      this._targetScale = newTargetScale;
-      this._targetPanX = newTargetPanX;
-      this._targetPanY = newTargetPanY;
-      this._startZoomRaf();
-    }
-    _startZoomRaf() {
-      if (this._zoomRafId) return;
-      const tick = () => {
-        const ease = 0.28;
-        const diffScale = this._targetScale - this.scale;
-        const diffPanX = this._targetPanX - this.panX;
-        const diffPanY = this._targetPanY - this.panY;
-        if (Math.abs(diffScale) < 1e-3 && Math.abs(diffPanX) < 0.2 && Math.abs(diffPanY) < 0.2) {
-          this.scale = this._targetScale;
-          this.panX = this._targetPanX;
-          this.panY = this._targetPanY;
-          this._applyTransform(false);
-          this._zoomRafId = null;
-          return;
-        }
-        this.scale += diffScale * ease;
-        this.panX += diffPanX * ease;
-        this.panY += diffPanY * ease;
-        this._applyTransform(false);
-        this._zoomRafId = requestAnimationFrame(tick);
-      };
-      this._zoomRafId = requestAnimationFrame(tick);
-    }
-    _handleMouseDown(e) {
-      if (!this.isOpen || e.button !== 0) return;
-      if (this.scale <= 1) return;
-      if (this._zoomRafId) {
-        cancelAnimationFrame(this._zoomRafId);
-        this._zoomRafId = null;
-      }
-      this._targetScale = this.scale;
-      this._targetPanX = this.panX;
-      this._targetPanY = this.panY;
-      this.isDragging = true;
-      this.startX = e.clientX - this.panX;
-      this.startY = e.clientY - this.panY;
-      this.dom.stage.classList.add("immerse-is-panning");
-      e.preventDefault();
-    }
-    _handleMouseMove(e) {
-      if (!this.isDragging) return;
-      this.panX = e.clientX - this.startX;
-      this.panY = e.clientY - this.startY;
-      this._targetPanX = this.panX;
-      this._targetPanY = this.panY;
-      this._applyTransform(false);
-    }
-    _handleMouseUp() {
-      if (this.isDragging) {
-        this.isDragging = false;
-        this.dom?.stage.classList.remove("immerse-is-panning");
-      }
-    }
-    _handleDblClick(e) {
-      if (!this.isOpen) return;
-      if (this._zoomRafId) {
-        cancelAnimationFrame(this._zoomRafId);
-        this._zoomRafId = null;
-      }
-      const isImageTarget = e.target === this.dom?.shield || e.target === this.dom?.img || e.target === this.dom?.imgWrapper;
-      if (!isImageTarget) return;
-      if (Date.now() - this._lastNavTime < 350) return;
-      e.preventDefault();
-      if (this.scale > 1.1) {
-        this.resetTransform();
-      } else {
-        this.scale = 2.5;
-        const rect = this.dom.stage.getBoundingClientRect();
-        const mouseX = e.clientX - (rect.left + rect.width / 2);
-        const mouseY = e.clientY - (rect.top + rect.height / 2);
-        this.panX = -mouseX * 1.5;
-        this.panY = -mouseY * 1.5;
-        this._targetScale = this.scale;
-        this._targetPanX = this.panX;
-        this._targetPanY = this.panY;
-        this._applyTransform(true);
-      }
-    }
-    _handleKeyDown(e) {
-      if (!this.isOpen) return;
-      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S" || e.key === "c" || e.key === "C")) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      const isArrowNav = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "j", "J", "l", "L", "[", "]"].includes(e.key);
-      if (!isArrowNav) {
-        this._resetIdleTimer();
-      }
-      switch (e.key) {
-        case "Escape":
-          e.preventDefault();
-          e.stopPropagation();
-          this.close();
-          break;
-        // Primary Navigation (Posts in Grid)
-        case "ArrowRight":
-        case "l":
-        case "L":
-          e.preventDefault();
-          this.nextPost();
-          break;
-        case "ArrowLeft":
-        case "j":
-        case "J":
-          e.preventDefault();
-          this.prevPost();
-          break;
-        // Secondary Navigation (Carousel Slides of Current Post)
-        case "ArrowDown":
-        case "]":
-          e.preventDefault();
-          this.nextSlide();
-          break;
-        case "ArrowUp":
-        case "[":
-          e.preventDefault();
-          this.prevSlide();
-          break;
-        case "f":
-        case "F":
-          e.preventDefault();
-          this.toggleNativeFullscreen();
-          break;
-        case "v":
-        case "V":
-          e.preventDefault();
-          this.openPostOnInstagram();
-          break;
-        case "0":
-          e.preventDefault();
-          this.resetTransform();
-          break;
-        case "+":
-        case "=":
-          e.preventDefault();
-          if (this._zoomRafId) {
-            cancelAnimationFrame(this._zoomRafId);
-            this._zoomRafId = null;
-          }
-          this.scale = Math.min(this.maxScale, this.scale * 1.25);
-          this._targetScale = this.scale;
-          this._targetPanX = this.panX;
-          this._targetPanY = this.panY;
-          this._applyTransform(true);
-          break;
-        case "-":
-        case "_":
-          e.preventDefault();
-          if (this._zoomRafId) {
-            cancelAnimationFrame(this._zoomRafId);
-            this._zoomRafId = null;
-          }
-          this.scale = Math.max(this.minScale, this.scale / 1.25);
-          if (this.scale <= 1) {
-            this.panX = 0;
-            this.panY = 0;
-          }
-          this._targetScale = this.scale;
-          this._targetPanX = this.panX;
-          this._targetPanY = this.panY;
-          this._applyTransform(true);
-          break;
-      }
-    }
-    /**
-     * Determines if a mouse event's coordinates are situated directly inside the image bounds.
-     *
-     * @param {MouseEvent|PointerEvent} e
-     * @returns {boolean}
-     */
-    _isCursorInsideImage(e) {
-      if (!this.dom?.img || !this.isOpen) return false;
-      if (e.target?.closest?.(".immerse-header, .immerse-nav-btn, .immerse-carousel-controller, .immerse-btn")) {
-        return false;
-      }
-      const edgeMarginX = 55;
-      const edgeMarginY = 50;
-      const isNearScreenEdge = e.clientY <= edgeMarginY || e.clientY >= window.innerHeight - edgeMarginY || e.clientX <= edgeMarginX || e.clientX >= window.innerWidth - edgeMarginX;
-      if (isNearScreenEdge) {
-        return false;
-      }
-      const activeImg = this.dom.img.style.opacity !== "0" || !this.dom.imgPrev?.src ? this.dom.img : this.dom.imgPrev;
-      const rect = activeImg.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return false;
-      return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
-    }
-    _handleRootMouseMove(e) {
-      if (!this.isOpen) return;
-      this._wakeCursor();
-      if (this._isCursorInsideImage(e)) {
-        return;
-      }
-      this._resetIdleTimer();
-    }
-    _handleRootPointerDown(e) {
-      if (!this.isOpen) return;
-      this._wakeCursor();
-      if (this._isCursorInsideImage(e)) {
-        return;
-      }
-      this._resetIdleTimer();
-    }
-    _wakeCursor() {
-      if (!this.dom?.root) return;
-      this.dom.root.classList.remove("immerse-cursor-hidden");
-      if (this._cursorTimer) clearTimeout(this._cursorTimer);
-      this._cursorTimer = setTimeout(() => {
-        if (this.isOpen && !this.isDragging) {
-          this.dom.root.classList.add("immerse-cursor-hidden");
-        }
-      }, 2800);
-    }
-    _resetIdleTimer() {
-      if (!this.dom?.root) return;
-      this.dom.root.classList.remove("immerse-controls-hidden");
-      if (this._idleTimer) clearTimeout(this._idleTimer);
-      this._idleTimer = setTimeout(() => {
-        if (this.isOpen && !this.isDragging) {
-          this.dom.root.classList.add("immerse-controls-hidden");
-        }
-      }, 3200);
-    }
-    _enterNativeFullscreen() {
-      if (!document.fullscreenElement && this.dom?.root?.requestFullscreen) {
-        this.dom.root.requestFullscreen().catch(() => {
-        });
-      }
-    }
-    _updateFullscreenButtonState() {
-      if (!this.dom?.fullscreenBtn) return;
-      const isFs = !!document.fullscreenElement;
-      if (isFs) {
-        this.dom.fullscreenBtn.title = "Back to Browser View (F)";
-        this.dom.fullscreenBtn.setAttribute("aria-label", "Back to Browser View");
-        this.dom.fullscreenBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
-      } else {
-        this.dom.fullscreenBtn.title = "Enter Fullscreen (F)";
-        this.dom.fullscreenBtn.setAttribute("aria-label", "Enter Fullscreen");
-        this.dom.fullscreenBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
-      }
-    }
-    toggleNativeFullscreen() {
-      if (!document.fullscreenElement) {
-        if (this.dom?.root?.requestFullscreen) {
-          this.dom.root.requestFullscreen().catch(() => {
-          });
-        }
-      } else {
-        if (document.exitFullscreen) {
-          document.exitFullscreen().catch(() => {
-          });
-        }
-      }
-    }
+    /* ---------------- Zoom & Pan Transforms managed by ZoomPanController ---------------- */
+    /* ---------------- Events and Idle Timers managed by EventsController ---------------- */
   };
 
   // src/modules/hover-button.js
