@@ -96,7 +96,7 @@ export class ViewerOverlay {
     // Resolution badge (default off, clean text without green dot)
     const badgeText = createElement('span', {
       className: 'immerse-badge-text',
-      textContent: 'Ultra-HD'
+      textContent: 'Immersive View'
     });
     const showBadge = !!this.options.showResolutionBadge;
     const badge = createElement('div', {
@@ -755,7 +755,7 @@ export class ViewerOverlay {
       this.dom.img.style.opacity = '1';
       this.dom.imgPrev.style.opacity = '0';
       this.dom.imgPrev.style.display = 'none';
-      this._updateBadgeText('HD Ready');
+      this._updateBadgeText(' No Resolution Info');
     };
 
     tempImg.src = slide.url;
