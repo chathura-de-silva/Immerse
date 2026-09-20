@@ -2,8 +2,6 @@
   // src/modules/settings-store.js
   var DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
-    triggerMode: "both",
-    // 'both' | 'button-only' | 'image-click'
     showResolutionBadge: false,
     wheelZoom: true,
     transitionStyle: "parallax",
@@ -1755,8 +1753,8 @@
     _initDelegatedHover() {
       let hideTimer = null;
       document.addEventListener("pointerover", (e) => {
-        const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: "both" };
-        if (!settings.enabled || settings.triggerMode === "image-click") return;
+        const settings = this.getSettings ? this.getSettings() : { enabled: true };
+        if (!settings.enabled) return;
         const target = e.target;
         if (!target) return;
         const tile = target.closest('a[href*="/p/"]') || target.closest("article");
@@ -1840,8 +1838,8 @@
       `
       });
       btn.addEventListener("click", (e) => {
-        const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: "both" };
-        if (!settings.enabled || settings.triggerMode === "image-click") return;
+        const settings = this.getSettings ? this.getSettings() : { enabled: true };
+        if (!settings.enabled) return;
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -1852,15 +1850,6 @@
       if (mediaContainer !== tile) {
         this.tileToButtonMap.set(mediaContainer, btn);
       }
-      imgElement.addEventListener("click", (e) => {
-        const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: "both" };
-        if (!settings.enabled) return;
-        if (settings.triggerMode === "image-click" || settings.triggerMode === "both") {
-          e.preventDefault();
-          e.stopPropagation();
-          this.onTrigger(imgElement, tile);
-        }
-      }, true);
       mediaContainer.appendChild(btnContainer);
     }
     /**

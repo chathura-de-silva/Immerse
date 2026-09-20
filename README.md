@@ -18,7 +18,7 @@ A lightweight, non-intrusive browser extension (Manifest V3) that simulates larg
   - **Resolution Badge**: Live readout of the loaded image's actual pixel dimensions with pulsing green HD indicator.
   - **Copyright Protection & Anti-Download Shielding**: Actively respects creator copyrights by preventing right-click "Save As", disabling drag-and-drop extraction, blocking save keyboard shortcuts (Ctrl+S / Cmd+S), and shielding images behind a non-interactive layer.
   - **True Fullscreen**: Toggle native browser fullscreen (`F`).
-- **Customizable Settings Popup**: Toggle features, select trigger behavior (Button + Click, Button Only, or Click Only), and adjust preferences.
+- **Customizable Settings Popup**: Toggle features, select slide transition style (Parallax vs Flat), toggle wheel zoom, and adjust preferences.
 
 ---
 

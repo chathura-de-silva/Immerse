@@ -5,7 +5,6 @@
 
 const DEFAULT_SETTINGS = {
   enabled: true,
-  triggerMode: 'both',
   showResolutionBadge: false,
   wheelZoom: true,
   transitionStyle: 'parallax'
@@ -15,7 +14,6 @@ const dom = {
   toggleEnabled: document.getElementById('toggle-enabled'),
   toggleBadge: document.getElementById('toggle-badge'),
   toggleZoom: document.getElementById('toggle-zoom'),
-  triggerRadios: document.querySelectorAll('input[name="triggerMode"]'),
   transitionRadios: document.querySelectorAll('input[name="transitionStyle"]')
 };
 
@@ -35,10 +33,6 @@ async function loadSettings() {
     dom.toggleEnabled.checked = settings.enabled;
     dom.toggleBadge.checked = settings.showResolutionBadge;
     dom.toggleZoom.checked = settings.wheelZoom;
-
-    dom.triggerRadios.forEach(radio => {
-      radio.checked = (radio.value === settings.triggerMode);
-    });
 
     dom.transitionRadios.forEach(radio => {
       const isSelected = (radio.value === settings.transitionStyle) ||
@@ -91,13 +85,6 @@ function bindEvents() {
     await saveSetting('wheelZoom', e.target.checked);
   });
 
-  dom.triggerRadios.forEach(radio => {
-    radio.addEventListener('change', async (e) => {
-      if (e.target.checked) {
-        await saveSetting('triggerMode', e.target.value);
-      }
-    });
-  });
 
   dom.transitionRadios.forEach(radio => {
     radio.addEventListener('change', async (e) => {

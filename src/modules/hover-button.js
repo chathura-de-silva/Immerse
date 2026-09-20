@@ -29,8 +29,8 @@ export class HoverButtonManager {
     let hideTimer = null;
 
     document.addEventListener('pointerover', (e) => {
-      const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: 'both' };
-      if (!settings.enabled || settings.triggerMode === 'image-click') return;
+      const settings = this.getSettings ? this.getSettings() : { enabled: true };
+      if (!settings.enabled) return;
 
       const target = e.target;
       if (!target) return;
@@ -145,8 +145,8 @@ export class HoverButtonManager {
 
     // Handle button activation
     btn.addEventListener('click', (e) => {
-      const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: 'both' };
-      if (!settings.enabled || settings.triggerMode === 'image-click') return;
+      const settings = this.getSettings ? this.getSettings() : { enabled: true };
+      if (!settings.enabled) return;
 
       e.preventDefault();
       e.stopPropagation();
@@ -159,18 +159,6 @@ export class HoverButtonManager {
     if (mediaContainer !== tile) {
       this.tileToButtonMap.set(mediaContainer, btn);
     }
-
-    // Also support direct image click if preferred in settings
-    imgElement.addEventListener('click', (e) => {
-      const settings = this.getSettings ? this.getSettings() : { enabled: true, triggerMode: 'both' };
-      if (!settings.enabled) return;
-
-      if (settings.triggerMode === 'image-click' || settings.triggerMode === 'both') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.onTrigger(imgElement, tile);
-      }
-    }, true);
 
     mediaContainer.appendChild(btnContainer);
   }
