@@ -63,13 +63,9 @@ html, body {
 .brand-icon {
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-card);
-  background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(253, 29, 29, 0.28);
 }
 
 .brand-icon svg {
