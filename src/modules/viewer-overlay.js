@@ -602,7 +602,7 @@ export class ViewerOverlay {
       if (this._isLoading && this.currentPostIndex === targetPostIndex && this.currentSlideIndex === targetSlideIndex) {
         this.dom.spinner.classList.add('immerse-spinner-visible');
         if (this.options.showResolutionBadge) {
-          this._updateBadgeText('Loading HD...');
+          this._updateBadgeText('Just a moment...');
         }
       }
     }, 80);

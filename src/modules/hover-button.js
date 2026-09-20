@@ -132,8 +132,8 @@ export class HoverButtonManager {
       className: 'immerse-hover-btn',
       attributes: {
         type: 'button',
-        title: 'View in Fullscreen Ultra-HD (Immerse)',
-        'aria-label': 'View in Fullscreen Ultra-HD'
+        title: 'View in Fullscreen (Immerse)',
+        'aria-label': 'View in Fullscreen'
       },
       innerHTML: `
         <svg viewBox="0 0 24 24" fill="none">
