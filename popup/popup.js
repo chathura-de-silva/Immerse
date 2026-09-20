@@ -108,7 +108,27 @@ function bindEvents() {
   });
 }
 
+function bindTabs() {
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabPanes = document.querySelectorAll('.tab-pane');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-tab');
+      tabBtns.forEach(b => b.classList.remove('active'));
+      tabPanes.forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      const targetPane = document.getElementById(`pane-${targetId}`);
+      if (targetPane) {
+        targetPane.classList.add('active');
+      }
+    });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   bindEvents();
+  bindTabs();
 });

@@ -26,105 +26,148 @@
       <span class="version-tag">v1.0</span>
     </header>
 
-    <!-- Master Toggle -->
-    <section class="card master-card">
-      <div class="card-info">
-        <span class="card-title">Extension Active</span>
-        <span class="card-desc">Enable high-res viewer & controls</span>
-      </div>
-      <label class="toggle-switch">
-        <input type="checkbox" id="toggle-enabled" checked>
-        <span class="slider"></span>
-      </label>
-    </section>
+    <!-- Navigation Tabs -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" id="tab-btn-settings" data-tab="settings" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+      <button class="tab-btn" id="tab-btn-shortcuts" data-tab="shortcuts" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8.01"/><line x1="10" y1="8" x2="10" y2="8.01"/><line x1="14" y1="8" x2="14" y2="8.01"/><line x1="18" y1="8" x2="18" y2="8.01"/><line x1="6" y1="12" x2="6" y2="12.01"/><line x1="18" y1="12" x2="18" y2="12.01"/><line x1="7" y1="16" x2="17" y2="16"/></svg>
+        <span>Shortcuts</span>
+      </button>
+    </nav>
 
-    <!-- Trigger Mode Settings -->
-    <section class="card section-card">
-      <h2 class="section-title">Activation Trigger</h2>
-      <div class="segmented-control" id="trigger-mode-group">
-        <label class="segment">
-          <input type="radio" name="triggerMode" value="both" checked>
-          <span>Button + Click</span>
-        </label>
-        <label class="segment">
-          <input type="radio" name="triggerMode" value="button-only">
-          <span>Button Only</span>
-        </label>
-        <label class="segment">
-          <input type="radio" name="triggerMode" value="image-click">
-          <span>Click Only</span>
-        </label>
-      </div>
-    </section>
-
-    <!-- Transition Style Settings -->
-    <section class="card section-card">
-      <h2 class="section-title">Slide Transition</h2>
-      <div class="segmented-control" id="transition-style-group">
-        <label class="segment">
-          <input type="radio" name="transitionStyle" value="parallax" checked>
-          <span>Parallax</span>
-        </label>
-        <label class="segment">
-          <input type="radio" name="transitionStyle" value="flat">
-          <span>Flat</span>
-        </label>
-      </div>
-    </section>
-
-    <!-- Preferences -->
-    <section class="card section-card">
-      <h2 class="section-title">Viewer Preferences</h2>
-      
-      <div class="setting-row">
-        <div class="setting-info">
-          <span class="setting-name">Show Resolution Badge</span>
-          <span class="setting-hint">Displays dimensions (e.g. 1080×1350)</span>
+    <!-- Tab Pane 1: Settings -->
+    <div class="tab-pane active" id="pane-settings">
+      <!-- Master Toggle -->
+      <section class="card master-card">
+        <div class="card-info">
+          <span class="card-title">Extension Active</span>
+          <span class="card-desc">Enable high-res viewer & controls</span>
         </div>
-        <label class="toggle-switch small">
-          <input type="checkbox" id="toggle-badge">
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-enabled" checked>
           <span class="slider"></span>
         </label>
-      </div>
+      </section>
 
-      <div class="setting-row">
-        <div class="setting-info">
-          <span class="setting-name">Mouse Wheel Zoom</span>
-          <span class="setting-hint">Zoom towards cursor in fullscreen</span>
+      <!-- Trigger Mode Settings -->
+      <section class="card section-card">
+        <h2 class="section-title">Activation Trigger</h2>
+        <div class="segmented-control" id="trigger-mode-group">
+          <label class="segment">
+            <input type="radio" name="triggerMode" value="both" checked>
+            <span>Button + Click</span>
+          </label>
+          <label class="segment">
+            <input type="radio" name="triggerMode" value="button-only">
+            <span>Button Only</span>
+          </label>
+          <label class="segment">
+            <input type="radio" name="triggerMode" value="image-click">
+            <span>Click Only</span>
+          </label>
         </div>
-        <label class="toggle-switch small">
-          <input type="checkbox" id="toggle-zoom" checked>
-          <span class="slider"></span>
-        </label>
-      </div>
-    </section>
+      </section>
 
-    <!-- Shortcuts Guide -->
-    <section class="card shortcuts-card">
-      <h2 class="section-title">Keyboard Shortcuts</h2>
-      <div class="shortcut-list">
-        <div class="shortcut-item">
-          <kbd>Esc</kbd>
-          <span>Close viewer</span>
+      <!-- Transition Style Settings -->
+      <section class="card section-card">
+        <h2 class="section-title">Slide Transition</h2>
+        <div class="segmented-control" id="transition-style-group">
+          <label class="segment">
+            <input type="radio" name="transitionStyle" value="parallax" checked>
+            <span>Parallax</span>
+          </label>
+          <label class="segment">
+            <input type="radio" name="transitionStyle" value="flat">
+            <span>Flat</span>
+          </label>
         </div>
-        <div class="shortcut-item">
-          <kbd>F</kbd>
-          <span>Fullscreen</span>
+      </section>
+
+      <!-- Preferences -->
+      <section class="card section-card">
+        <h2 class="section-title">Viewer Preferences</h2>
+        
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-name">Show Resolution Badge</span>
+            <span class="setting-hint">Displays dimensions (e.g. 1080×1350)</span>
+          </div>
+          <label class="toggle-switch small">
+            <input type="checkbox" id="toggle-badge">
+            <span class="slider"></span>
+          </label>
         </div>
-        <div class="shortcut-item">
-          <kbd>2× Click</kbd>
-          <span>Zoom 2.5×</span>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-name">Mouse Wheel Zoom</span>
+            <span class="setting-hint">Zoom towards cursor in fullscreen</span>
+          </div>
+          <label class="toggle-switch small">
+            <input type="checkbox" id="toggle-zoom" checked>
+            <span class="slider"></span>
+          </label>
         </div>
-        <div class="shortcut-item">
-          <kbd>←</kbd> <kbd>→</kbd>
-          <span>Carousel</span>
+      </section>
+    </div>
+
+    <!-- Tab Pane 2: Shortcuts -->
+    <div class="tab-pane" id="pane-shortcuts">
+      <section class="card shortcuts-card">
+        <h2 class="section-title">Navigation & Control</h2>
+        <div class="shortcut-list">
+          <div class="shortcut-item">
+            <kbd>Esc</kbd>
+            <span>Close viewer</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>V</kbd>
+            <span>View post in tab</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>F</kbd>
+            <span>Fullscreen</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>0</kbd>
+            <span>Reset zoom</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>←</kbd> <kbd>→</kbd>
+            <span>Next / prev post</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>↑</kbd> <kbd>↓</kbd>
+            <span>Feed slide</span>
+          </div>
         </div>
-        <div class="shortcut-item">
-          <kbd>0</kbd>
-          <span>Reset Zoom</span>
+      </section>
+
+      <section class="card shortcuts-card">
+        <h2 class="section-title">Mouse & Zoom Gestures</h2>
+        <div class="shortcut-list">
+          <div class="shortcut-item">
+            <kbd>2× Click</kbd>
+            <span>Zoom 2.5× to cursor</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Wheel</kbd>
+            <span>Smooth cursor zoom</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Drag</kbd>
+            <span>Pan zoomed image</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Click out</kbd>
+            <span>Dismiss viewer</span>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
 
     <!-- Footer -->
     <footer class="popup-footer">

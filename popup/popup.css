@@ -1,17 +1,22 @@
 /* ==========================================================================
    Immerse - Extension Settings Popup Styles
+   Consistent Crisp Modern Aesthetic matching Native Browser Window
    ========================================================================== */
 
 :root {
   --bg-primary: #121214;
-  --bg-secondary: #1a1a1e;
-  --bg-tertiary: #26262c;
+  --bg-secondary: #19191d;
+  --bg-tertiary: #25252b;
   --text-primary: #ffffff;
   --text-secondary: #90909a;
   --accent-color: #0095f6;
   --accent-gradient: linear-gradient(135deg, #833ab4, #fd1d1d, #fcaf45);
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-focus: rgba(0, 149, 246, 0.4);
+  --radius-card: 6px;
+  --radius-control: 5px;
+  --radius-sm: 4px;
+  --smooth: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
@@ -20,8 +25,8 @@
   padding: 0;
 }
 
-body {
-  width: 330px;
+html, body {
+  width: 336px;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -29,13 +34,16 @@ body {
   line-height: 1.4;
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  border-radius: 0;
+  margin: 0;
+  padding: 0;
 }
 
 .popup-container {
-  padding: 16px;
+  padding: 14px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* Header */
@@ -43,7 +51,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
 .brand {
@@ -55,13 +63,13 @@ body {
 .brand-icon {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(253, 29, 29, 0.25);
+  box-shadow: 0 4px 12px rgba(253, 29, 29, 0.28);
 }
 
 .brand-icon svg {
@@ -84,18 +92,95 @@ body {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
   padding: 3px 7px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
+}
+
+/* Tab Navigation */
+.tab-nav {
+  display: flex;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: 3px;
+  gap: 3px;
+}
+
+.tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tab-btn.active {
+  background: var(--bg-tertiary);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.tab-btn svg {
+  stroke: currentColor;
+  transition: stroke 0.15s ease;
+}
+
+.tab-btn.active svg {
+  stroke: var(--accent-color);
+}
+
+/* Tab Panes */
+.tab-pane {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tab-pane.active {
+  display: flex;
+  animation: tabFadeIn 0.18s var(--smooth);
+}
+
+@keyframes tabFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Cards */
 .card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  padding: 11px 13px;
+  transition: border-color 0.2s ease;
+}
+
+.card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .master-card {
@@ -106,7 +191,7 @@ body {
 
 .card-title {
   display: block;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
 }
 
@@ -114,7 +199,7 @@ body {
   display: block;
   font-size: 11.5px;
   color: var(--text-secondary);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .section-title {
@@ -123,14 +208,14 @@ body {
   letter-spacing: 0.6px;
   color: var(--text-secondary);
   font-weight: 700;
-  margin-bottom: 10px;
+  margin-bottom: 9px;
 }
 
 /* Segmented Control */
 .segmented-control {
   display: flex;
   background: var(--bg-primary);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 2px;
   border: 1px solid var(--border-subtle);
 }
@@ -151,7 +236,7 @@ body {
   font-size: 11.5px;
   font-weight: 500;
   color: var(--text-secondary);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   transition: all 0.15s ease;
 }
 
@@ -159,7 +244,7 @@ body {
   background: var(--bg-tertiary);
   color: var(--text-primary);
   font-weight: 600;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 /* Setting Rows */
@@ -212,8 +297,8 @@ body {
   cursor: pointer;
   inset: 0;
   background-color: var(--bg-tertiary);
-  transition: 0.25s;
-  border-radius: 24px;
+  transition: 0.2s var(--smooth);
+  border-radius: 12px;
   border: 1px solid var(--border-subtle);
 }
 
@@ -225,9 +310,9 @@ body {
   left: 2px;
   bottom: 2px;
   background-color: white;
-  transition: 0.25s;
-  border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: 0.2s var(--smooth);
+  border-radius: 9px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .toggle-switch.small .slider:before {
@@ -235,6 +320,7 @@ body {
   width: 14px;
   left: 2px;
   bottom: 2px;
+  border-radius: 7px;
 }
 
 input:checked + .slider {
@@ -250,11 +336,11 @@ input:checked + .slider:before {
   transform: translateX(18px);
 }
 
-/* Shortcut List */
+/* Shortcut Lists */
 .shortcut-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 8px 10px;
 }
 
 .shortcut-item {
@@ -266,14 +352,20 @@ input:checked + .slider:before {
 }
 
 kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
   background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
   padding: 2px 5px;
-  font-family: monospace;
-  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Monaco, Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
   color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
 }
 
 /* Footer */
@@ -281,5 +373,5 @@ kbd {
   text-align: center;
   font-size: 11px;
   color: var(--text-secondary);
-  padding-top: 4px;
+  padding-top: 2px;
 }
