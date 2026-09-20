@@ -88,8 +88,64 @@ class ImmerseApp {
       this.mediaDetector.start();
     }
 
+    // Detect Instagram SPA navigations (pushState / popstate) and reset accumulated
+    // state when the user switches between contexts (profile grid ↔ feed).
+    // Without this, images from the previous context bleed into the new one.
+    this._lastNavContext = this._getPageContext();
+    this._handleNavigation = () => this._onSpaNavigation();
+
+    // Intercept history.pushState so we catch programmatic navigations
+    const origPushState = history.pushState.bind(history);
+    history.pushState = (...args) => {
+      origPushState(...args);
+      this._handleNavigation();
+    };
+    window.addEventListener('popstate', this._handleNavigation);
+
     this.initialized = true;
     console.log('[Immerse] Instagram High-Resolution Extension loaded.');
+  }
+
+  /**
+   * Classifies the current Instagram page context based on the URL pathname.
+   *
+   * @returns {'feed' | 'profile'}
+   */
+  _getPageContext() {
+    const path = window.location.pathname;
+    if (path === '/' || path.startsWith('/feed')) return 'feed';
+    return 'profile';
+  }
+
+  /**
+   * Called on every SPA navigation. Resets accumulated media/sequencer state
+   * whenever the user switches between feed and profile (or vice versa), so
+   * images from the previous context never show up in the new gallery.
+   */
+  _onSpaNavigation() {
+    const newContext = this._getPageContext();
+    if (newContext !== this._lastNavContext) {
+      console.log(`[Immerse] Context switched: ${this._lastNavContext} → ${newContext}. Resetting gallery state.`);
+      this._lastNavContext = newContext;
+
+      // Close overlay if it happens to be open during navigation
+      if (this.overlay?.isOpen) {
+        this.overlay.close();
+      }
+
+      // Purge stale cross-context entries
+      this.mediaDetector?.reset();
+      this.sequencer?.reset();
+    }
+
+    // Always re-scan freshly mounted DOM after a navigation (Instagram SPA)
+    const currentSettings = settingsStore.get();
+    if (currentSettings.enabled) {
+      // Brief delay so Instagram can render the new page's DOM nodes
+      setTimeout(() => {
+        this.mediaDetector?.scan(document.body);
+      }, 300);
+    }
   }
 
   /**

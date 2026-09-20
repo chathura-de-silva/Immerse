@@ -62,6 +62,18 @@ export class MediaDetector {
   }
 
   /**
+   * Clears all accumulated media entries and the processed-image registry.
+   * Call this whenever the user navigates to a different Instagram context
+   * (e.g. profile → feed) so stale entries from the previous context don't
+   * contaminate the new gallery sequence.
+   */
+  reset() {
+    this.mediaEntries = [];
+    this.processedImages = new WeakSet();
+    this._pendingNodes = [];
+  }
+
+  /**
    * Stops the mutation observer.
    */
   stop() {

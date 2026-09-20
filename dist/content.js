@@ -1852,6 +1852,17 @@
       });
     }
     /**
+     * Clears all accumulated media entries and the processed-image registry.
+     * Call this whenever the user navigates to a different Instagram context
+     * (e.g. profile → feed) so stale entries from the previous context don't
+     * contaminate the new gallery sequence.
+     */
+    reset() {
+      this.mediaEntries = [];
+      this.processedImages = /* @__PURE__ */ new WeakSet();
+      this._pendingNodes = [];
+    }
+    /**
      * Stops the mutation observer.
      */
     stop() {
@@ -1965,6 +1976,14 @@
     constructor() {
       this.posts = [];
       this.listeners = /* @__PURE__ */ new Set();
+    }
+    /**
+     * Clears all accumulated posts from the sequence.
+     * Call this on SPA navigation so profile posts don't bleed into the feed
+     * gallery (or vice versa) after a context switch.
+     */
+    reset() {
+      this.posts = [];
     }
     /**
      * Synchronizes and accumulates legitimate post tiles in visual reading order.
@@ -2171,8 +2190,49 @@
       if (settings.enabled) {
         this.mediaDetector.start();
       }
+      this._lastNavContext = this._getPageContext();
+      this._handleNavigation = () => this._onSpaNavigation();
+      const origPushState = history.pushState.bind(history);
+      history.pushState = (...args) => {
+        origPushState(...args);
+        this._handleNavigation();
+      };
+      window.addEventListener("popstate", this._handleNavigation);
       this.initialized = true;
       console.log("[Immerse] Instagram High-Resolution Extension loaded.");
+    }
+    /**
+     * Classifies the current Instagram page context based on the URL pathname.
+     *
+     * @returns {'feed' | 'profile'}
+     */
+    _getPageContext() {
+      const path = window.location.pathname;
+      if (path === "/" || path.startsWith("/feed")) return "feed";
+      return "profile";
+    }
+    /**
+     * Called on every SPA navigation. Resets accumulated media/sequencer state
+     * whenever the user switches between feed and profile (or vice versa), so
+     * images from the previous context never show up in the new gallery.
+     */
+    _onSpaNavigation() {
+      const newContext = this._getPageContext();
+      if (newContext !== this._lastNavContext) {
+        console.log(`[Immerse] Context switched: ${this._lastNavContext} \u2192 ${newContext}. Resetting gallery state.`);
+        this._lastNavContext = newContext;
+        if (this.overlay?.isOpen) {
+          this.overlay.close();
+        }
+        this.mediaDetector?.reset();
+        this.sequencer?.reset();
+      }
+      const currentSettings = settingsStore.get();
+      if (currentSettings.enabled) {
+        setTimeout(() => {
+          this.mediaDetector?.scan(document.body);
+        }, 300);
+      }
     }
     /**
      * Handles opening the fullscreen overlay with the synchronized grid posts.

@@ -49,6 +49,15 @@ export class GallerySequencer {
   }
 
   /**
+   * Clears all accumulated posts from the sequence.
+   * Call this on SPA navigation so profile posts don't bleed into the feed
+   * gallery (or vice versa) after a context switch.
+   */
+  reset() {
+    this.posts = [];
+  }
+
+  /**
    * Synchronizes and accumulates legitimate post tiles in visual reading order.
    * Preserves previously discovered posts and slides across Instagram's virtual list unmounts.
    *
