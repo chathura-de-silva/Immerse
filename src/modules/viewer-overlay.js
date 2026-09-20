@@ -38,6 +38,10 @@ export class ViewerOverlay {
     this.scale = 1;
     this.panX = 0;
     this.panY = 0;
+    this._targetScale = 1;
+    this._targetPanX = 0;
+    this._targetPanY = 0;
+    this._zoomRafId = null;
     this.isDragging = false;
     this.startX = 0;
     this.startY = 0;
@@ -1114,9 +1118,16 @@ export class ViewerOverlay {
   /* ---------------- Zoom & Pan Transforms ---------------- */
 
   resetZoomState() {
+    if (this._zoomRafId) {
+      cancelAnimationFrame(this._zoomRafId);
+      this._zoomRafId = null;
+    }
     this.scale = 1;
     this.panX = 0;
     this.panY = 0;
+    this._targetScale = 1;
+    this._targetPanX = 0;
+    this._targetPanY = 0;
     if (this.dom?.zoomResetBtn) {
       this.dom.zoomResetBtn.textContent = '100%';
     }
@@ -1139,7 +1150,7 @@ export class ViewerOverlay {
       this.dom.img.style.transition = 'opacity 0.28s var(--immerse-smooth)';
     }
 
-    this.dom.img.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
+    this.dom.img.style.transform = `translate3d(${this.panX}px, ${this.panY}px, 0) scale(${this.scale})`;
     this.dom.zoomResetBtn.textContent = `${Math.round(this.scale * 100)}%`;
 
     if (this.scale > 1.05) {
@@ -1156,31 +1167,85 @@ export class ViewerOverlay {
 
     if (this.options.wheelZoom === false) return;
 
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-    const newScale = Math.max(this.minScale, Math.min(this.maxScale, this.scale * zoomFactor));
+    // Normalize delta across input devices (pixels, lines, pages)
+    let delta = -e.deltaY;
+    if (e.deltaMode === 1) { // DOM_DELTA_LINE (standard mouse wheel notch)
+      delta *= 32;
+    } else if (e.deltaMode === 2) { // DOM_DELTA_PAGE
+      delta *= 300;
+    }
 
-    if (newScale === this.scale) return;
+    // Clamp delta per event to prevent hyper-acceleration on aggressive flick scrolling
+    delta = Math.max(-140, Math.min(140, delta));
+
+    // Continuous exponential zoom factor for butter-smooth micro-adjustments
+    const zoomFactor = Math.exp(delta * 0.002);
+    const newTargetScale = Math.max(this.minScale, Math.min(this.maxScale, this._targetScale * zoomFactor));
+
+    if (Math.abs(newTargetScale - this._targetScale) < 0.0001) return;
 
     const rect = this.dom.stage.getBoundingClientRect();
     const mouseX = e.clientX - (rect.left + rect.width / 2);
     const mouseY = e.clientY - (rect.top + rect.height / 2);
 
-    const ratio = newScale / this.scale;
-    this.panX = mouseX - (mouseX - this.panX) * ratio;
-    this.panY = mouseY - (mouseY - this.panY) * ratio;
-    this.scale = newScale;
+    const ratio = newTargetScale / this._targetScale;
+    let newTargetPanX = mouseX - (mouseX - this._targetPanX) * ratio;
+    let newTargetPanY = mouseY - (mouseY - this._targetPanY) * ratio;
 
-    if (this.scale <= 1) {
-      this.panX = 0;
-      this.panY = 0;
+    if (newTargetScale <= 1) {
+      newTargetPanX = 0;
+      newTargetPanY = 0;
     }
 
-    this._applyTransform(false);
+    this._targetScale = newTargetScale;
+    this._targetPanX = newTargetPanX;
+    this._targetPanY = newTargetPanY;
+
+    this._startZoomRaf();
+  }
+
+  _startZoomRaf() {
+    if (this._zoomRafId) return;
+
+    const tick = () => {
+      // Exponential smoothing factor: 0.28 delivers immediate response with silky damping
+      const ease = 0.28;
+      const diffScale = this._targetScale - this.scale;
+      const diffPanX = this._targetPanX - this.panX;
+      const diffPanY = this._targetPanY - this.panY;
+
+      if (Math.abs(diffScale) < 0.001 && Math.abs(diffPanX) < 0.2 && Math.abs(diffPanY) < 0.2) {
+        this.scale = this._targetScale;
+        this.panX = this._targetPanX;
+        this.panY = this._targetPanY;
+        this._applyTransform(false);
+        this._zoomRafId = null;
+        return;
+      }
+
+      this.scale += diffScale * ease;
+      this.panX += diffPanX * ease;
+      this.panY += diffPanY * ease;
+
+      this._applyTransform(false);
+      this._zoomRafId = requestAnimationFrame(tick);
+    };
+
+    this._zoomRafId = requestAnimationFrame(tick);
   }
 
   _handleMouseDown(e) {
     if (!this.isOpen || e.button !== 0) return;
     if (this.scale <= 1) return;
+
+    // Interrupt any active kinetic wheel animation on drag initiation
+    if (this._zoomRafId) {
+      cancelAnimationFrame(this._zoomRafId);
+      this._zoomRafId = null;
+    }
+    this._targetScale = this.scale;
+    this._targetPanX = this.panX;
+    this._targetPanY = this.panY;
 
     this.isDragging = true;
     this.startX = e.clientX - this.panX;
@@ -1193,6 +1258,8 @@ export class ViewerOverlay {
     if (!this.isDragging) return;
     this.panX = e.clientX - this.startX;
     this.panY = e.clientY - this.startY;
+    this._targetPanX = this.panX;
+    this._targetPanY = this.panY;
     this._applyTransform(false);
   }
 
@@ -1205,6 +1272,12 @@ export class ViewerOverlay {
 
   _handleDblClick(e) {
     if (!this.isOpen) return;
+
+    // Interrupt any active kinetic wheel animation on double-click
+    if (this._zoomRafId) {
+      cancelAnimationFrame(this._zoomRafId);
+      this._zoomRafId = null;
+    }
 
     // Only allow double-click to zoom directly on the image shield or image wrapper
     const isImageTarget = e.target === this.dom?.shield ||
@@ -1226,6 +1299,9 @@ export class ViewerOverlay {
       const mouseY = e.clientY - (rect.top + rect.height / 2);
       this.panX = -mouseX * 1.5;
       this.panY = -mouseY * 1.5;
+      this._targetScale = this.scale;
+      this._targetPanX = this.panX;
+      this._targetPanY = this.panY;
       this._applyTransform(true);
     }
   }
@@ -1296,14 +1372,28 @@ export class ViewerOverlay {
       case '+':
       case '=':
         e.preventDefault();
+        if (this._zoomRafId) {
+          cancelAnimationFrame(this._zoomRafId);
+          this._zoomRafId = null;
+        }
         this.scale = Math.min(this.maxScale, this.scale * 1.25);
+        this._targetScale = this.scale;
+        this._targetPanX = this.panX;
+        this._targetPanY = this.panY;
         this._applyTransform(true);
         break;
       case '-':
       case '_':
         e.preventDefault();
+        if (this._zoomRafId) {
+          cancelAnimationFrame(this._zoomRafId);
+          this._zoomRafId = null;
+        }
         this.scale = Math.max(this.minScale, this.scale / 1.25);
         if (this.scale <= 1) { this.panX = 0; this.panY = 0; }
+        this._targetScale = this.scale;
+        this._targetPanX = this.panX;
+        this._targetPanY = this.panY;
         this._applyTransform(true);
         break;
     }
