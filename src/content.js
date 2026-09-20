@@ -88,19 +88,34 @@ class ImmerseApp {
       this.mediaDetector.start();
     }
 
-    // Detect Instagram SPA navigations (pushState / popstate) and reset accumulated
-    // state when the user switches between contexts (profile grid ↔ feed).
+    // Detect Instagram SPA navigations (pushState / replaceState / popstate / URL polling)
+    // and reset accumulated state when the user switches between contexts (profile grid ↔ feed).
     // Without this, images from the previous context bleed into the new one.
     this._lastNavContext = this._getPageContext();
     this._handleNavigation = () => this._onSpaNavigation();
 
-    // Intercept history.pushState so we catch programmatic navigations
+    // Intercept history.pushState and history.replaceState to catch all client-side navigations
     const origPushState = history.pushState.bind(history);
     history.pushState = (...args) => {
       origPushState(...args);
       this._handleNavigation();
     };
+
+    const origReplaceState = history.replaceState.bind(history);
+    history.replaceState = (...args) => {
+      origReplaceState(...args);
+      this._handleNavigation();
+    };
+
     window.addEventListener('popstate', this._handleNavigation);
+
+    // Fallback URL checker in case Instagram mutates URL via internal router
+    setInterval(() => {
+      const currentContext = this._getPageContext();
+      if (currentContext !== this._lastNavContext) {
+        this._handleNavigation();
+      }
+    }, 400);
 
     this.initialized = true;
     console.log('[Immerse] Instagram High-Resolution Extension loaded.');
@@ -109,12 +124,24 @@ class ImmerseApp {
   /**
    * Classifies the current Instagram page context based on the URL pathname.
    *
-   * @returns {'feed' | 'profile'}
+   * @returns {string} E.g. 'feed', 'profile:@username', or 'other'
    */
   _getPageContext() {
-    const path = window.location.pathname;
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
     if (path === '/' || path.startsWith('/feed')) return 'feed';
-    return 'profile';
+    
+    // Explicit non-feed pages like explore, direct, reels
+    if (path.startsWith('/explore')) return 'explore';
+    if (path.startsWith('/direct')) return 'direct';
+    if (path.startsWith('/reels')) return 'reels';
+
+    // Profiles: /username or /username/saved, /username/tagged
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length > 0 && !['p', 'reel', 'tv', 'stories'].includes(parts[0])) {
+      return `profile:${parts[0]}`;
+    }
+
+    return path;
   }
 
   /**
@@ -133,7 +160,7 @@ class ImmerseApp {
         this.overlay.close();
       }
 
-      // Purge stale cross-context entries
+      // Purge stale cross-context entries immediately
       this.mediaDetector?.reset();
       this.sequencer?.reset();
     }
@@ -158,6 +185,14 @@ class ImmerseApp {
     const settings = settingsStore.get();
     if (!settings.enabled) return;
 
+    // Check if the page context shifted without an intercepted navigation
+    const currentContext = this._getPageContext();
+    if (currentContext !== this._lastNavContext) {
+      this._lastNavContext = currentContext;
+      this.mediaDetector?.reset();
+      this.sequencer?.reset();
+    }
+
     // Keep overlay settings in sync with current storage
     if (this.overlay) {
       this.overlay.updateSettings(settings);
@@ -165,6 +200,11 @@ class ImmerseApp {
 
     // Preserve the user's current scroll position so we can restore it on close
     this.savedScrollY = window.scrollY;
+
+    // Re-scan current document to ensure currently visible items are detected
+    if (this.mediaDetector) {
+      this.mediaDetector.scan(document.body);
+    }
 
     // Synchronize all legitimate grid posts currently in DOM
     const posts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());

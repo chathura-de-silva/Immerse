@@ -2270,19 +2270,37 @@
         origPushState(...args);
         this._handleNavigation();
       };
+      const origReplaceState = history.replaceState.bind(history);
+      history.replaceState = (...args) => {
+        origReplaceState(...args);
+        this._handleNavigation();
+      };
       window.addEventListener("popstate", this._handleNavigation);
+      setInterval(() => {
+        const currentContext = this._getPageContext();
+        if (currentContext !== this._lastNavContext) {
+          this._handleNavigation();
+        }
+      }, 400);
       this.initialized = true;
       console.log("[Immerse] Instagram High-Resolution Extension loaded.");
     }
     /**
      * Classifies the current Instagram page context based on the URL pathname.
      *
-     * @returns {'feed' | 'profile'}
+     * @returns {string} E.g. 'feed', 'profile:@username', or 'other'
      */
     _getPageContext() {
-      const path = window.location.pathname;
+      const path = window.location.pathname.replace(/\/+$/, "") || "/";
       if (path === "/" || path.startsWith("/feed")) return "feed";
-      return "profile";
+      if (path.startsWith("/explore")) return "explore";
+      if (path.startsWith("/direct")) return "direct";
+      if (path.startsWith("/reels")) return "reels";
+      const parts = path.split("/").filter(Boolean);
+      if (parts.length > 0 && !["p", "reel", "tv", "stories"].includes(parts[0])) {
+        return `profile:${parts[0]}`;
+      }
+      return path;
     }
     /**
      * Called on every SPA navigation. Resets accumulated media/sequencer state
@@ -2316,10 +2334,19 @@
     handleTrigger(targetImg, container) {
       const settings = settingsStore.get();
       if (!settings.enabled) return;
+      const currentContext = this._getPageContext();
+      if (currentContext !== this._lastNavContext) {
+        this._lastNavContext = currentContext;
+        this.mediaDetector?.reset();
+        this.sequencer?.reset();
+      }
       if (this.overlay) {
         this.overlay.updateSettings(settings);
       }
       this.savedScrollY = window.scrollY;
+      if (this.mediaDetector) {
+        this.mediaDetector.scan(document.body);
+      }
       const posts = this.sequencer.syncSequence(this.mediaDetector.getMediaEntries());
       if (posts.length > 0) {
         const { postIndex, slideIndex } = this.sequencer.findLocation(targetImg);
