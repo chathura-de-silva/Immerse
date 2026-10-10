@@ -16,7 +16,7 @@
     "lightbox"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "devDependencies": {
     "esbuild": "^0.25.0"
   }
