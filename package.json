@@ -1,6 +1,6 @@
 {
   "name": "immerse-instagram-hd",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "High-resolution fullscreen viewer and simulated large-screen overlay for Instagram",
   "main": "src/content.js",
   "type": "module",
