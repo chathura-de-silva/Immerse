@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Immerse — Instagram High-Res Fullscreen Viewer",
+  "name": "Immerse for Instagram",
   "version": "1.0.1",
-  "description": "Simulate large-screen viewing with highest resolution images and intuitive fullscreen controls on Instagram.",
+  "description": "Full Screen High Resolution Image viewer and Navigator for Instagram",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
